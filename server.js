@@ -10,11 +10,9 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/api/test", (req, res) => {
-  res.json({
-    status: "ok",
-    platform: "vercel",
-  });
-});
 
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
 module.exports = app;
