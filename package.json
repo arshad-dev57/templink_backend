@@ -1,11 +1,8 @@
 {
-  "name": "node-vercel-api",
+  "name": "templink-backend",
   "version": "1.0.0",
-  "main": "api/index.js",
-  "scripts": {
-  "start": "node api/index.js"
-  },
+  "private": true,
   "dependencies": {
-    "express": "^4.22.1"
+    "express": "^4.19.2"
   }
 }
