@@ -6,6 +6,7 @@ exports.createPaymentIntent = async (req, res) => {
   try {
     const { amount, currency } = req.body;
 
+    
     if (!amount || !currency) {
       return res.status(400).json({ error: "amount and currency are required" });
     }
