@@ -1,60 +1,79 @@
-const User = require("../models/user_model");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const User = require("../models/user_model");
 
-const JWT_SECRET = process.env.JWT_SECRET;
+function signToken(userId) {
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: "30d" });
+}
 
+// POST /api/users/register
 exports.register = async (req, res) => {
   try {
-    const { userType, password, confirmPassword } = req.body;
-    if (!userType || !password || !confirmPassword)
-      return res.status(400).json({ message: "All required fields" });
+    const { name, email, password } = req.body;
 
-    if (password !== confirmPassword)
-      return res.status(400).json({ message: "Passwords do not match" });
-
-    let userData = { userType };
-
-    if (userType === "Employee") {
-      const { email, phoneNumber, jobPosition } = req.body;
-      if (!email || !phoneNumber || !jobPosition)
-        return res.status(400).json({ message: "Missing employee fields" });
-      userData = { ...userData, email, phoneNumber, jobPosition };
-    } else if (userType === "Employer") {
-      const { companyName, officialEmail, phoneNumber } = req.body;
-      if (!companyName || !officialEmail || !phoneNumber)
-        return res.status(400).json({ message: "Missing employer fields" });
-      userData = { ...userData, companyName, officialEmail, phoneNumber };
+    if (!name || !email || !password) {
+      return res.status(400).json({ ok: false, msg: "name, email, password required" });
     }
 
-    let exists = null;
-    if (userType === "Employee") exists = await User.findOne({ email: userData.email });
-    else exists = await User.findOne({ officialEmail: userData.officialEmail });
+    const exists = await User.findOne({ email: email.toLowerCase() });
+    if (exists) {
+      return res.status(409).json({ ok: false, msg: "Email already registered" });
+    }
 
-    if (exists)
-      return res.status(400).json({ message: "User already exists" });
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    userData.password = hashedPassword;
-
-    const user = await User.create(userData);
-
-    const token = jwt.sign({ id: user._id, userType: user.userType }, JWT_SECRET, {
-      expiresIn: "7d",
+    const user = await User.create({
+      name,
+      email: email.toLowerCase(),
+      password,
     });
 
-    res.status(201).json({ message: "User registered", token });
+    const token = signToken(user._id);
+
+    return res.status(201).json({
+      ok: true,
+      msg: "Registered successfully",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ ok: false, msg: "Server error", error: err.message });
   }
 };
 
-exports.getProfile = async (req, res) => {
+// POST /api/users/login
+exports.login = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
-    res.json(user);
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, msg: "email and password required" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
+    if (!user) {
+      return res.status(401).json({ ok: false, msg: "Invalid credentials" });
+    }
+
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ ok: false, msg: "Invalid credentials" });
+    }
+
+    const token = signToken(user._id);
+
+    return res.json({
+      ok: true,
+      msg: "Login successful",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ ok: false, msg: "Server error", error: err.message });
   }
 };

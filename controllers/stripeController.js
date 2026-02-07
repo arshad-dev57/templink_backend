@@ -1,17 +1,11 @@
 const Stripe = require("stripe");
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
 exports.createPaymentIntent = async (req, res) => {
   try {
-    // ✅ Only allow POST
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed. Use POST." });
-    }
-
-    // ✅ Guard against undefined body
+    
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    
     const { amount, currency } = req.body || {};
-
     if (!amount || !currency) {
       return res.status(400).json({ error: "amount and currency are required" });
     }
@@ -21,7 +15,6 @@ exports.createPaymentIntent = async (req, res) => {
       return res.status(400).json({ error: "amount must be a positive number" });
     }
 
-    // Stripe expects amount in minor units
     const amountInMinorUnit = Math.round(amountNumber * 100);
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -30,7 +23,7 @@ exports.createPaymentIntent = async (req, res) => {
       payment_method_types: ["card"],
     });
 
-    return res.status(200).json({
+    return res.json({
       clientSecret: paymentIntent.client_secret,
       id: paymentIntent.id,
     });
