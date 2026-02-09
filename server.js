@@ -1,14 +1,14 @@
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
+const http = require("http");
 
 const app = express();
 
 const dbConnection = require("./config/db");
-const userRoutes = require("./routes/user_routes");
 
-// ✅ STRIPE KEY DEBUG LOGS (SAFE)
-const stripeKey = process.env.STRIPE_SECRET_KEY || "";
+// ✅ socket init (named export)
+const { initChatSocket } = require("./sockets/chat_socket");
 
 // Middleware
 app.use(cors());
@@ -29,10 +29,17 @@ app.use("/api/paypal", require("./routes/paypal_routes"));
 app.use("/api/notifications", require("./routes/notification_routes"));
 app.use("/api/auth", require("./routes/password_reset_routes"));
 
+// ✅ NEW: chat routes (inbox + messages)
+app.use("/api/chat", require("./routes/chat_routes"));
 
+// DB
 dbConnection();
 
+// ✅ Create HTTP server + attach socket
+const server = http.createServer(app);
+initChatSocket(server);
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
- });
+});
