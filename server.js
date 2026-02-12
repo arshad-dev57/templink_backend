@@ -28,9 +28,11 @@ app.use("/api/stripe", require("./routes/stripe_routes"));
 app.use("/api/paypal", require("./routes/paypal_routes"));
 app.use("/api/notifications", require("./routes/notification_routes"));
 app.use("/api/auth", require("./routes/password_reset_routes"));
-
+app.use("/auth", require("./routes/linkedin_routes"));
 // ✅ NEW: chat routes (inbox + messages)
 app.use("/api/chat", require("./routes/chat_routes"));
+app.use("/api/jobposts", require("./routes/job_post_routes"));
+app.use("/api/projects", require("./routes/project_routes"));
 
 // DB
 dbConnection();

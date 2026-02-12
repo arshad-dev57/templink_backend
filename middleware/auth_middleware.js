@@ -7,8 +7,11 @@ module.exports = function auth(req, res, next) {
     if (!token) return res.status(401).json({ error: "No token" });
 
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: payload.id };
-    next();
+
+    // ✅ Your token uses { sub: userId }
+    req.user = { id: payload.sub };
+
+    return next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid token" });
   }

@@ -97,9 +97,8 @@ exports.verifyOtp = async (req, res) => {
     return res.status(500).json({ ok: false, msg: "Server error", error: err.message });
   }
 };
+const bcrypt = require("bcryptjs"); // top pe add kar lena
 
-// 3) RESET PASSWORD
-// POST /api/auth/forgot-password/reset { resetToken, newPassword, confirmPassword }
 exports.resetPassword = async (req, res) => {
   try {
     const { resetToken, newPassword, confirmPassword } = req.body;
@@ -110,8 +109,9 @@ exports.resetPassword = async (req, res) => {
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ ok: false, msg: "Passwords do not match" });
     }
-    if (String(newPassword).length < 6) {
-      return res.status(400).json({ ok: false, msg: "Password must be at least 6 chars" });
+    // ✅ same rule as register (recommended)
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ ok: false, msg: "Password must be at least 8 chars" });
     }
 
     const tokenHash = hashValue(String(resetToken).trim());
@@ -123,10 +123,11 @@ exports.resetPassword = async (req, res) => {
 
     if (!record) return res.status(400).json({ ok: false, msg: "Invalid or expired reset token" });
 
-    const user = await User.findById(record.userId).select("+password");
+    // ✅ IMPORTANT: fetch user and update passwordHash
+    const user = await User.findById(record.userId);
     if (!user) return res.status(400).json({ ok: false, msg: "User not found" });
 
-    user.password = newPassword; // your pre-save hook will hash it
+    user.passwordHash = await bcrypt.hash(String(newPassword), 10);
     await user.save();
 
     // cleanup
@@ -134,6 +135,7 @@ exports.resetPassword = async (req, res) => {
 
     return res.json({ ok: true, msg: "Password updated successfully" });
   } catch (err) {
+    console.error("RESET_PASSWORD_ERROR:", err);
     return res.status(500).json({ ok: false, msg: "Server error", error: err.message });
   }
 };
