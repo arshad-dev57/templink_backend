@@ -8,5 +8,11 @@ router.post('/job', auth, jobPostController.createJobPost);
 
 // Public route
 router.get('/jobs', jobPostController.getAllJobPosts);
+router.get('/my-jobs', auth, jobPostController.getMyJobPosts);
+router.delete('/job/:jobId',auth, jobPostController.deleteJobPost);
+router.patch('/job/:jobId/pause',auth, jobPostController.pauseJobPost);
+router.patch('/job/:jobId/resume',auth, jobPostController.resumeJobPost);
 
+// Get job status
+router.get('/job/:jobId/status',auth, jobPostController.getJobStatus);
 module.exports = router;

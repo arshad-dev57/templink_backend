@@ -1,6 +1,6 @@
 const Stripe = require("stripe");
 
-exports.createPaymentIntent = async (req, res) => {
+exports.  createPaymentIntent = async (req, res) => {
   try {
     
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);

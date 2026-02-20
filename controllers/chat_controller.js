@@ -2,7 +2,8 @@ const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const User = require("../models/user_model");
 
-// GET /api/chat/conversations
+// GET /api/chat/conversations// controllers/chat_controller.js - getMyConversations function
+
 exports.getMyConversations = async (req, res) => {
   try {
     const myId = req.user.id;
@@ -15,14 +16,49 @@ exports.getMyConversations = async (req, res) => {
       .map((c) => c.participants.find((p) => p.toString() !== myId)?.toString())
       .filter(Boolean);
 
-    const users = await User.find({ _id: { $in: otherIds } }).select("name").lean();
-    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+    // ✅ FIX: Get complete user data with profile photos
+    const users = await User.find({ _id: { $in: otherIds } })
+      .select({
+        firstName: 1,
+        lastName: 1,
+        email: 1,
+        // ✅ Employee photo
+        'employeeProfile.photoUrl': 1,
+        // ✅ Employer logo
+        'employerProfile.logoUrl': 1,
+        // ✅ Role decide karega kaunsa image lena hai
+        role: 1
+      })
+      .lean();
+
+    const userMap = new Map();
+    users.forEach((u) => {
+      const userId = u._id.toString();
+      
+      // ✅ Get name
+      let name = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+      if (!name) name = 'User';
+      
+      // ✅ Get profile image based on role
+      let imageUrl = '';
+      if (u.role === 'employee') {
+        imageUrl = u.employeeProfile?.photoUrl || '';
+      } else {
+        imageUrl = u.employerProfile?.logoUrl || '';
+      }
+      
+      // ✅ Default avatar if no image
+      if (!imageUrl) {
+        imageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4F46E5&color=fff`;
+      }
+      
+      userMap.set(userId, { name, imageUrl });
+    });
 
     const result = convos.map((c) => {
       const otherId = c.participants.find((p) => p.toString() !== myId)?.toString();
-      const other = userMap.get(otherId) || {};
-
-      // Map in mongoose can become object in lean()
+      const other = userMap.get(otherId) || { name: "Unknown", imageUrl: "" };
+      
       const unread =
         (c.unreadCounts?.get && c.unreadCounts.get(myId)) ??
         c.unreadCounts?.[myId] ??
@@ -31,12 +67,12 @@ exports.getMyConversations = async (req, res) => {
       return {
         conversationId: c._id,
         userId: otherId,
-        name: other.name ?? "Unknown",
+        name: other.name,
+        image: other.imageUrl, 
         lastMessage: c.lastMessage?.text ?? "",
         time: c.lastMessage?.at ?? c.lastMessageAt,
         unread,
         online: false,
-        image: "https://i.pravatar.cc/150?img=1",
       };
     });
 
@@ -45,7 +81,6 @@ exports.getMyConversations = async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 };
-
 // POST /api/chat/conversations/with/:otherUserId
 exports.getOrCreateConversationWith = async (req, res) => {
   try {

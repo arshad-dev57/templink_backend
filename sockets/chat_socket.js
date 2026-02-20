@@ -1,3 +1,5 @@
+// F:\templink_backend\sockets\chat_socket.js
+
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 
@@ -8,34 +10,56 @@ const onlineUsers = new Map(); // userId -> Set(socketId)
 
 /** helpers */
 function addOnline(userId, socketId) {
-  if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
-  onlineUsers.get(userId).add(socketId);
+  const uid = userId?.toString();
+  if (!uid) return;
+
+  if (!onlineUsers.has(uid)) onlineUsers.set(uid, new Set());
+  onlineUsers.get(uid).add(socketId);
 }
+
 function removeOnline(userId, socketId) {
-  if (!onlineUsers.has(userId)) return;
-  onlineUsers.get(userId).delete(socketId);
-  if (onlineUsers.get(userId).size === 0) onlineUsers.delete(userId);
+  const uid = userId?.toString();
+  if (!uid) return;
+
+  if (!onlineUsers.has(uid)) return;
+  onlineUsers.get(uid).delete(socketId);
+  if (onlineUsers.get(uid).size === 0) onlineUsers.delete(uid);
 }
+
 function isUserOnline(userId) {
-  return onlineUsers.has(userId);
+  const uid = userId?.toString();
+  if (!uid) return false;
+  return onlineUsers.has(uid);
 }
 
 /** check if user is in conversation */
 async function ensureParticipant(conversationId, userId) {
+  if (!conversationId) return { ok: false, error: "Missing conversationId" };
+  if (!userId) return { ok: false, error: "Missing userId" };
+
   const convo = await Conversation.findById(conversationId).lean();
   if (!convo) return { ok: false, error: "Conversation not found" };
-  const allowed = convo.participants.some((p) => p.toString() === userId.toString());
+
+  const allowed = (convo.participants || []).some(
+    (p) => p?.toString?.() === userId.toString()
+  );
+
   if (!allowed) return { ok: false, error: "Not allowed" };
   return { ok: true, convo };
 }
 
 /** check if receiver is currently inside convo room */
 function receiverInRoom(io, conversationId, receiverId) {
-  const room = io.sockets.adapter.rooms.get(`convo:${conversationId}`);
+  const cid = conversationId?.toString();
+  const rid = receiverId?.toString();
+  if (!cid || !rid) return false;
+
+  const room = io.sockets.adapter.rooms.get(`convo:${cid}`);
   if (!room) return false;
+
   for (const sid of room) {
     const s = io.sockets.sockets.get(sid);
-    if (s?.userId?.toString() === receiverId.toString()) return true;
+    if (s?.userId?.toString?.() === rid) return true;
   }
   return false;
 }
@@ -55,7 +79,13 @@ function initChatSocket(server) {
       if (!token) return next(new Error("No token"));
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = decoded.id;
+
+      // support multiple common jwt payload keys
+      const uid = decoded?.id || decoded?._id || decoded?.userId || decoded?.sub;
+
+      if (!uid) return next(new Error("Token missing user id"));
+
+      socket.userId = uid.toString();
       next();
     } catch (e) {
       next(new Error("Auth failed"));
@@ -63,7 +93,13 @@ function initChatSocket(server) {
   });
 
   io.on("connection", (socket) => {
-    const myId = socket.userId;
+    const myId = socket.userId; // already string now
+
+    if (!myId) {
+      // should never happen due to middleware, but safety
+      socket.disconnect(true);
+      return;
+    }
 
     // =============== PRESENCE (multi-device) ===============
     addOnline(myId, socket.id);
@@ -90,7 +126,10 @@ function initChatSocket(server) {
         );
 
         // notify other participant that messages are delivered (optional)
-        const otherId = check.convo.participants.find((p) => p.toString() !== myId)?.toString();
+        const otherId = check.convo.participants
+          .find((p) => p.toString() !== myId)
+          ?.toString();
+
         if (otherId && upd.modifiedCount > 0) {
           io.to(`user:${otherId}`).emit("message_status", {
             conversationId,
@@ -152,7 +191,10 @@ function initChatSocket(server) {
           convo = check.convo;
 
           // ensure toUser is actually the other participant
-          const otherId = convo.participants.find((p) => p.toString() !== myId)?.toString();
+          const otherId = convo.participants
+            .find((p) => p.toString() !== myId)
+            ?.toString();
+
           if (!otherId || otherId !== toUserId.toString()) {
             return ack?.({ ok: false, error: "Invalid toUserId for this conversation" });
           }
@@ -280,7 +322,10 @@ function initChatSocket(server) {
         );
 
         // notify other participant
-        const otherId = check.convo.participants.find((p) => p.toString() !== myId)?.toString();
+        const otherId = check.convo.participants
+          .find((p) => p.toString() !== myId)
+          ?.toString();
+
         if (otherId) {
           io.to(`user:${otherId}`).emit("read_receipt", {
             conversationId,
@@ -306,26 +351,33 @@ function initChatSocket(server) {
 
     // ================= VOICE / VIDEO CALL (signal only) =================
     socket.on("call_invite", ({ toUserId, callType }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("call_incoming", { fromUserId: myId, callType });
     });
     socket.on("call_accept", ({ toUserId, callType }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("call_accepted", { fromUserId: myId, callType });
     });
     socket.on("call_reject", ({ toUserId }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("call_rejected", { fromUserId: myId });
     });
     socket.on("call_end", ({ toUserId }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("call_ended", { fromUserId: myId });
     });
 
     // ================= WEBRTC SIGNALING =================
     socket.on("webrtc_offer", ({ toUserId, sdp }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("webrtc_offer", { fromUserId: myId, sdp });
     });
     socket.on("webrtc_answer", ({ toUserId, sdp }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("webrtc_answer", { fromUserId: myId, sdp });
     });
     socket.on("webrtc_ice_candidate", ({ toUserId, candidate }) => {
+      if (!toUserId) return;
       io.to(`user:${toUserId}`).emit("webrtc_ice_candidate", { fromUserId: myId, candidate });
     });
 

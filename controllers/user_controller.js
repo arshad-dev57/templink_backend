@@ -2,7 +2,6 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/user_model");
 const bcrypt = require("bcryptjs");
 
-// ✅ Google
 const { OAuth2Client } = require("google-auth-library");
 const crypto = require("crypto");
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -30,6 +29,13 @@ exports.register = async (req, res) => {
       employerProfile,
     } = req.body;
 
+    console.log("📦 Register request received:");
+    console.log("- Role:", role);
+    console.log("- Name:", firstName, lastName);
+    console.log("- Email:", email);
+    console.log("- Country:", country);
+    console.log("- Has file:", req.file ? "Yes" : "No");
+
     if (!role || !["employee", "employer"].includes(role)) {
       return res.status(400).json({ message: "Invalid role. Use employee or employer." });
     }
@@ -48,7 +54,38 @@ exports.register = async (req, res) => {
     const exists = await User.findOne({ email: email.toLowerCase() });
     if (exists) return res.status(409).json({ message: "Email already registered." });
 
+    const uploadedPhotoUrl = req.file?.path || "";
+
     const passwordHash = await bcrypt.hash(password, 10);
+
+    // Parse nested objects
+    let parsedEmployeeProfile = {};
+    if (employeeProfile) {
+      if (typeof employeeProfile === "string") {
+        try {
+          parsedEmployeeProfile = JSON.parse(employeeProfile);
+          console.log("✅ Parsed employeeProfile:", parsedEmployeeProfile);
+        } catch (e) {
+          console.error("❌ Failed to parse employeeProfile:", e);
+        }
+      } else {
+        parsedEmployeeProfile = employeeProfile;
+      }
+    }
+
+    let parsedEmployerProfile = {};
+    if (employerProfile) {
+      if (typeof employerProfile === "string") {
+        try {
+          parsedEmployerProfile = JSON.parse(employerProfile);
+          console.log("✅ Parsed employerProfile:", parsedEmployerProfile);
+        } catch (e) {
+          console.error("❌ Failed to parse employerProfile:", e);
+        }
+      } else {
+        parsedEmployerProfile = employerProfile;
+      }
+    }
 
     const userDoc = {
       role,
@@ -64,27 +101,91 @@ exports.register = async (req, res) => {
     };
 
     if (role === "employee") {
-      userDoc.employeeProfile = employeeProfile ?? {};
+      userDoc.employeeProfile = {
+        experienceLevel: parsedEmployeeProfile.experienceLevel || "",
+        category: parsedEmployeeProfile.category || "",
+        subcategory: parsedEmployeeProfile.subcategory || "",
+        skills: Array.isArray(parsedEmployeeProfile.skills) ? parsedEmployeeProfile.skills : [],
+        title: parsedEmployeeProfile.title || "",
+        bio: parsedEmployeeProfile.bio || "",
+        hourlyRate: parsedEmployeeProfile.hourlyRate || "",
+        photoUrl: uploadedPhotoUrl,
+        dateOfBirth: parsedEmployeeProfile.dateOfBirth || "",
+        streetAddress: parsedEmployeeProfile.streetAddress || "",
+        city: parsedEmployeeProfile.city || "",
+        province: parsedEmployeeProfile.province || "",
+        phoneNumber: parsedEmployeeProfile.phoneNumber || "",
+        workExperiences: Array.isArray(parsedEmployeeProfile.workExperiences) 
+          ? parsedEmployeeProfile.workExperiences 
+          : [],
+        educations: Array.isArray(parsedEmployeeProfile.educations) 
+          ? parsedEmployeeProfile.educations 
+          : [],
+        portfolioProjects: Array.isArray(parsedEmployeeProfile.portfolioProjects) 
+          ? parsedEmployeeProfile.portfolioProjects 
+          : [],
+        rating: 0,
+        totalReviews: 0,
+      };
       userDoc.employerProfile = {};
+      
+      console.log("✅ Employee profile prepared");
+      
     } else {
-      userDoc.employerProfile = { ...(employerProfile ?? {}), country };
+      // ✅ FIXED: Properly assign employer profile with ALL fields
+      userDoc.employerProfile = {
+        companyName: parsedEmployerProfile.companyName || "",
+        logoUrl: uploadedPhotoUrl || parsedEmployerProfile.logoUrl || "",
+        industry: parsedEmployerProfile.industry || "",
+        city: parsedEmployerProfile.city || "",
+        country: parsedEmployerProfile.country || country,
+        companySize: parsedEmployerProfile.companySize || "",
+        workModel: parsedEmployerProfile.workModel || "",
+        phone: parsedEmployerProfile.phone || "",
+        companyEmail: parsedEmployerProfile.companyEmail || "",
+        website: parsedEmployerProfile.website || "",
+        linkedin: parsedEmployerProfile.linkedin || "",
+        about: parsedEmployerProfile.about || "",
+        mission: parsedEmployerProfile.mission || "",
+        cultureTags: Array.isArray(parsedEmployerProfile.cultureTags) 
+          ? parsedEmployerProfile.cultureTags 
+          : [],
+        teamMembers: Array.isArray(parsedEmployerProfile.teamMembers) 
+          ? parsedEmployerProfile.teamMembers 
+          : [],
+        isVerifiedEmployer: false,
+        rating: 0,
+        sizeLabel: parsedEmployerProfile.companySize || "",
+      };
       userDoc.employeeProfile = {};
+      
+      console.log("✅ Employer profile prepared:", {
+        companyName: userDoc.employerProfile.companyName,
+        industry: userDoc.employerProfile.industry,
+        city: userDoc.employerProfile.city,
+        cultureTagsCount: userDoc.employerProfile.cultureTags.length,
+        teamMembersCount: userDoc.employerProfile.teamMembers.length,
+      });
     }
 
     const user = await User.create(userDoc);
     const token = signToken(user);
+
+    console.log("✅ User created with ID:", user._id);
+    console.log("✅ Role:", user.role);
 
     return res.status(201).json({
       message: "Registered successfully",
       token,
       user: user.toJSON(),
     });
+    
   } catch (err) {
-    console.error("REGISTER_ERROR:", err);
-    return res.status(500).json({ message: "Server error" });
+    console.error("❌ REGISTER_ERROR:", err);
+    return res.status(500).json({ message: err.message || "Server error" });
   }
 };
-
+// ✅ UPDATED: Login function with image and name
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -104,22 +205,44 @@ exports.login = async (req, res) => {
 
     const token = signToken(user);
 
+    // ✅ Get image URL based on role
+    let imageUrl = '';
+    if (user.role === 'employee') {
+      imageUrl = user.employeeProfile?.photoUrl || '';
+    } else {
+      imageUrl = user.employerProfile?.logoUrl || '';
+    }
+
+    // ✅ Prepare user response with all necessary fields
+    const userResponse = {
+      _id: user._id,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      country: user.country,
+      status: user.status,
+      pointsBalance: user.pointsBalance,
+      imageUrl: imageUrl, // ✅ Add image URL
+      // Include full profiles if needed
+      employeeProfile: user.employeeProfile,
+      employerProfile: user.employerProfile,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+
     return res.status(200).json({
       message: "Login successful",
       token,
-      user: user.toJSON(),
+      user: userResponse, // ✅ Send enhanced user object
     });
+    
   } catch (err) {
     console.error("LOGIN_ERROR:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
-
-/**
- * ✅ GOOGLE AUTH (signup/login)
- * POST /api/users/google
- * body: { idToken, role, country, sendEmails, termsAccepted }
- */
+// ✅ UPDATED: Google Auth function with image
 exports.googleAuth = async (req, res) => {
   try {
     const { idToken, role, country, sendEmails = false, termsAccepted = false } = req.body;
@@ -199,11 +322,37 @@ exports.googleAuth = async (req, res) => {
 
     const token = signToken(user);
 
+    // ✅ Get image URL based on role
+    let imageUrl = '';
+    if (user.role === 'employee') {
+      imageUrl = user.employeeProfile?.photoUrl || '';
+    } else {
+      imageUrl = user.employerProfile?.logoUrl || '';
+    }
+
+    // ✅ Prepare user response
+    const userResponse = {
+      _id: user._id,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      country: user.country,
+      status: user.status,
+      pointsBalance: user.pointsBalance,
+      imageUrl: imageUrl, // ✅ Add image URL
+      employeeProfile: user.employeeProfile,
+      employerProfile: user.employerProfile,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+
     return res.status(200).json({
       message: "Google auth successful",
       token,
-      user: user.toJSON(),
+      user: userResponse, // ✅ Send enhanced user object
     });
+    
   } catch (err) {
     console.error("GOOGLE_AUTH_ERROR:", err);
     return res.status(500).json({ message: "Server error" });

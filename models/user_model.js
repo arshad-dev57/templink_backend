@@ -1,5 +1,9 @@
 const mongoose = require("mongoose");
 
+/* ===========================
+   Employee Sub Schemas
+=========================== */
+
 const WorkExperienceSchema = new mongoose.Schema(
   {
     title: { type: String, trim: true },
@@ -27,12 +31,23 @@ const EducationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const PortfolioProjectSchema = new mongoose.Schema(
+  {
+    title: { type: String, trim: true },
+    description: { type: String, trim: true },
+    imageUrl: { type: String, default: "" },
+    category: { type: String, default: "" },
+    completionDate: { type: String, default: "" },
+    clientName: { type: String, default: "" },
+    projectUrl: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const EmployeeProfileSchema = new mongoose.Schema(
   {
-    experienceLevel: { type: String, enum: ["new", "some", "expert", ""], default: "" },
-    goal: { type: String, enum: ["money", "experience", "no_goal", ""], default: "" },
+    experienceLevel: { type: String, default: "" },
     category: { type: String, default: "" },
-    subcategory: { type: String, default: "" },
     skills: { type: [String], default: [] },
     title: { type: String, default: "" },
     workExperiences: { type: [WorkExperienceSchema], default: [] },
@@ -40,88 +55,94 @@ const EmployeeProfileSchema = new mongoose.Schema(
     bio: { type: String, default: "" },
     hourlyRate: { type: String, default: "" },
     photoUrl: { type: String, default: "" },
-    dateOfBirth: { type: String, default: "" },
-    streetAddress: { type: String, default: "" },
-    city: { type: String, default: "" },
-    province: { type: String, default: "" },
-    phoneNumber: { type: String, default: "" },
-  },
-  { _id: false }
-);
 
-const TeamMemberSchema = new mongoose.Schema(
-  {
-    name: { type: String, trim: true },
-    role: { type: String, trim: true },
-    email: { type: String, trim: true },
+    portfolioProjects: { 
+      type: [PortfolioProjectSchema], 
+      default: [] 
+    },
+
+    rating: { type: Number, default: 0, min: 0, max: 5 },
+    totalReviews: { type: Number, default: 0 },
   },
   { _id: false }
 );
+/* ===========================
+   Employer Schema (COMPLETE)
+=========================== */
 
 const EmployerProfileSchema = new mongoose.Schema(
   {
+    // Basic Info
     companyName: { type: String, default: "" },
     logoUrl: { type: String, default: "" },
     industry: { type: String, default: "" },
     city: { type: String, default: "" },
-    country: { type: String, default: "" }, // register screen se set
+    country: { type: String, default: "" },
     companySize: { type: String, default: "" },
-    workModel: { type: String, enum: ["Remote", "Onsite", "Hybrid", ""], default: "" },
-
-    phone: { type: String, default: "" },
-    companyEmail: { type: String, default: "" },
-    website: { type: String, default: "" },
-    linkedin: { type: String, default: "" },
-
-    about: { type: String, default: "" },
-    mission: { type: String, default: "" },
-
-    cultureTags: { type: [String], default: [] },
-    teamMembers: { type: [TeamMemberSchema], default: [] },
-
+    workModel: { type: String, default: "" },         
+    phone: { type: String, default: "" },             // ✅ ADD THIS
+    companyEmail: { type: String, default: "" },      // ✅ ADD THIS
+    website: { type: String, default: "" },           // ✅ ADD THIS
+    linkedin: { type: String, default: "" },          // ✅ ADD THIS
+    about: { type: String, default: "" },             // ✅ ADD THIS
+    mission: { type: String, default: "" },           // ✅ ADD THIS
+    cultureTags: { type: [String], default: [] },     // ✅ ADD THIS
     isVerifiedEmployer: { type: Boolean, default: false },
     rating: { type: Number, default: 0 },
-    sizeLabel: { type: String, default: "" }, // optional: "250+" etc
   },
   { _id: false }
 );
+/* ===========================
+   MAIN USER SCHEMA
+=========================== */
 
 const UserSchema = new mongoose.Schema(
   {
-    role: { type: String, enum: ["employee", "employer"], required: true },
+    role: { 
+      type: String, 
+      enum: ["employee", "employer"], 
+      required: true 
+    },
 
-    firstName: { type: String, trim: true, required: true },
-    lastName: { type: String, trim: true, required: true },
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
 
     email: {
       type: String,
-      trim: true,
-      lowercase: true,
       required: true,
       unique: true,
-      index: true,
+      lowercase: true,
     },
+
     passwordHash: { type: String, required: true },
 
-    country: { type: String, required: true }, // register screen country
-    sendEmails: { type: Boolean, default: false },
-    termsAccepted: { type: Boolean, default: false },
-    termsAcceptedAt: { type: Date },
+    country: { type: String, required: true },
 
-    status: { type: String, enum: ["active", "blocked"], default: "active" },
+    status: { 
+      type: String, 
+      enum: ["active", "blocked"], 
+      default: "active" 
+    },
 
-    employeeProfile: { type: EmployeeProfileSchema, default: () => ({}) },
-    employerProfile: { type: EmployerProfileSchema, default: () => ({}) },
+    /* ✅ POINTS WALLET */
+    pointsBalance: {
+      type: Number,
+      default: 100,   // signup bonus
+    },
 
-    // ✅ LinkedIn integration (ADDED)
-    linkedinConnected: { type: Boolean, default: false },
-    linkedinAccessToken: { type: String, default: "" },
-    linkedinTokenCreatedAt: { type: Date },
+    employeeProfile: { 
+      type: EmployeeProfileSchema, 
+      default: () => ({}) 
+    },
+
+    employerProfile: { 
+      type: EmployerProfileSchema, 
+      default: () => ({}) 
+    },
   },
   { timestamps: true }
 );
 
-// Hide passwordHash in responses
 UserSchema.set("toJSON", {
   transform: function (doc, ret) {
     delete ret.passwordHash;

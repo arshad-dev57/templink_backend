@@ -1,3 +1,4 @@
+// In your main server file - FIXED
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
@@ -23,21 +24,40 @@ app.get("/", (req, res) => {
   });
 });
 
+app.use("/api/proposals", require("./routes/proposalRoutes"));
 app.use("/api/users", require("./routes/user_routes"));
 app.use("/api/stripe", require("./routes/stripe_routes"));
 app.use("/api/paypal", require("./routes/paypal_routes"));
 app.use("/api/notifications", require("./routes/notification_routes"));
 app.use("/api/auth", require("./routes/password_reset_routes"));
 app.use("/auth", require("./routes/linkedin_routes"));
-// ✅ NEW: chat routes (inbox + messages)
 app.use("/api/chat", require("./routes/chat_routes"));
 app.use("/api/jobposts", require("./routes/job_post_routes"));
 app.use("/api/projects", require("./routes/project_routes"));
+app.use("/api/toptalent", require("./routes/toptalent_routes"));
+app.use("/api/milestones", require("./routes/milestoneRoutes"));
+app.use('/api/contracts', require('./routes/contract_routes'));
 
+// ✅ FIXED: Sirf ek baar employee routes register karo
+app.use('/api/employee', require('./routes/employee_project_routes'));  // 👈 YEH SAHI HAI
+
+// ✅ Employee profile ke liye alag path do
+app.use('/api/employee-profile', require('./routes/employeeProfileRoutes'));  // 👈 CHANGED
+
+app.use('/api/employer', require('./routes/employerProfileRoutes'));
+app.use('/api/search', require('./routes/search_routes'));
+app.use('/api/employee/stats', require('./routes/employeeStatsRoutes'));
+app.use('/api/coins', require('./routes/coinPurchaseRoutes'));
+app.use('/api/wallet', require('./routes/wallet_routes'));
+app.use('/api/milestone-payments', require('./routes/milestones_payment_routes'));
+app.use('/api/submissions', require('./routes/submissionRoutes'));
+app.use('/api/invoices',require('./routes/invoice_routes'));
+app.use('/api/ratings',require('./routes/ratingRoutes'));
+app.use('/api/resumes', require('./routes/resumeRoutes'));
 // DB
 dbConnection();
 
-// ✅ Create HTTP server + attach socket
+// Create HTTP server + attach socket
 const server = http.createServer(app);
 initChatSocket(server);
 
