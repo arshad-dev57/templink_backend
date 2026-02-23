@@ -3,27 +3,18 @@ const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
 const http = require("http");
-
 const app = express();
-
 const dbConnection = require("./config/db");
-
-// ✅ socket init (named export)
 const { initChatSocket } = require("./sockets/chat_socket");
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Routes
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
     message: "Backend running on localhost 🚀",
   });
 });
-
 app.use("/api/proposals", require("./routes/proposalRoutes"));
 app.use("/api/users", require("./routes/user_routes"));
 app.use("/api/stripe", require("./routes/stripe_routes"));
@@ -37,13 +28,8 @@ app.use("/api/projects", require("./routes/project_routes"));
 app.use("/api/toptalent", require("./routes/toptalent_routes"));
 app.use("/api/milestones", require("./routes/milestoneRoutes"));
 app.use('/api/contracts', require('./routes/contract_routes'));
-
-// ✅ FIXED: Sirf ek baar employee routes register karo
 app.use('/api/employee', require('./routes/employee_project_routes'));  // 👈 YEH SAHI HAI
-
-// ✅ Employee profile ke liye alag path do
 app.use('/api/employee-profile', require('./routes/employeeProfileRoutes'));  // 👈 CHANGED
-
 app.use('/api/employer', require('./routes/employerProfileRoutes'));
 app.use('/api/search', require('./routes/search_routes'));
 app.use('/api/employee/stats', require('./routes/employeeStatsRoutes'));
@@ -54,13 +40,9 @@ app.use('/api/submissions', require('./routes/submissionRoutes'));
 app.use('/api/invoices',require('./routes/invoice_routes'));
 app.use('/api/ratings',require('./routes/ratingRoutes'));
 app.use('/api/resumes', require('./routes/resumeRoutes'));
-// DB
 dbConnection();
-
-// Create HTTP server + attach socket
 const server = http.createServer(app);
 initChatSocket(server);
-
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);

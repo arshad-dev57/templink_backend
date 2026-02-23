@@ -83,7 +83,7 @@ exports.employerSignContract = async (req, res) => {
     };
 
     // Update status - waiting for employee
-    contract.status = 'PENDING_EMPLOYEE_SIGN'; // 👈 Updated
+    contract.status = 'PENDING_EMPLOYEE_SIGN';
     await contract.save();
 
     return res.status(200).json({
@@ -142,7 +142,7 @@ exports.employeeSignContract = async (req, res) => {
     }
 
     // Update employee signature
-    contract.signatures.employee = { // 👈 employee
+    contract.signatures.employee = {
       signed: true,
       signedAt: new Date(),
       ipAddress: req.ip,
@@ -189,7 +189,7 @@ exports.getUserContracts = async (req, res) => {
     
     if (role === 'employer') {
       query.employerId = userId;
-    } else if (role === 'employee') { // 👈 employee
+    } else if (role === 'employee') {
       query.employeeId = userId;
     } else {
       // Both roles
@@ -296,7 +296,6 @@ exports.downloadContractPDF = async (req, res) => {
     }
 
     // For now, return contract data
-    // In production, you would generate PDF using a library like pdfkit
     return res.status(200).json({
       success: true,
       message: 'PDF download endpoint - In production, this will return PDF file',
@@ -311,4 +310,3 @@ exports.downloadContractPDF = async (req, res) => {
     });
   }
 };
-
