@@ -1,4 +1,4 @@
-// In your main server file - FIXED
+
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
@@ -28,8 +28,8 @@ app.use("/api/projects", require("./routes/project_routes"));
 app.use("/api/toptalent", require("./routes/toptalent_routes"));
 app.use("/api/milestones", require("./routes/milestoneRoutes"));
 app.use('/api/contracts', require('./routes/contract_routes'));
-app.use('/api/employee', require('./routes/employee_project_routes'));  // 👈 YEH SAHI HAI
-app.use('/api/employee-profile', require('./routes/employeeProfileRoutes'));  // 👈 CHANGED
+app.use('/api/employee', require('./routes/employee_project_routes'));
+app.use('/api/employee-profile', require('./routes/employeeProfileRoutes'));
 app.use('/api/employer', require('./routes/employerProfileRoutes'));
 app.use('/api/search', require('./routes/search_routes'));
 app.use('/api/employee/stats', require('./routes/employeeStatsRoutes'));
@@ -40,6 +40,7 @@ app.use('/api/submissions', require('./routes/submissionRoutes'));
 app.use('/api/invoices',require('./routes/invoice_routes'));
 app.use('/api/ratings',require('./routes/ratingRoutes'));
 app.use('/api/resume', require('./routes/resume_routes'));
+app.use('/api/jobapplication',require('./routes/jobApplicationRoutes'));
 
 dbConnection();
 const server = http.createServer(app);

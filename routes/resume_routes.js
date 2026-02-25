@@ -20,10 +20,8 @@ if (auth) {
 
 router.post('/', upload.single('resume'), uploadResume);
 
-// GET /api/resumes – get all resumes of the user
 router.get('/', getUserResumes);
 
-// DELETE /api/resumes/:id – delete a specific resume
 router.delete('/:id', deleteResume);
 
 // PATCH /api/resumes/:id/default – set as default
