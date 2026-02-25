@@ -1,15 +1,25 @@
-// controllers/job_Application_Controller.js
 const JobPost = require('../models/jobpost');
 const User = require('../models/user_model');
 const JobApplication = require('../models/JobApplication');
 
+// @desc    Apply for job with PDF resume
+// @route   POST /api/job-applications/apply/:jobId
+// @access  Private (Employee only)
 exports.applyForJob = async (req, res) => {
   try {
     const { jobId } = req.params;
     const employeeId = req.user.id;
     const { coverLetter } = req.body;
 
-    // Get user role from database
+    // Check if file uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload your resume (PDF)'
+      });
+    }
+
+    // Get user
     const user = await User.findById(employeeId);
     if (!user) {
       return res.status(404).json({ 
@@ -44,7 +54,7 @@ exports.applyForJob = async (req, res) => {
     if (existing) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Already applied' 
+        message: 'You have already applied for this job' 
       });
     }
 
@@ -68,11 +78,20 @@ exports.applyForJob = async (req, res) => {
       totalReviews: user.employeeProfile?.totalReviews || 0
     };
 
-    // Create application
+    // Create application with resume file data
     const application = await JobApplication.create({
       jobId: job._id,
       employeeId: employeeId,
       employerId: job.postedBy,
+      
+      // Resume file info from multer/cloudinary
+      resumeFileName: req.file.originalname,
+      resumeFileUrl: req.file.path,           // Cloudinary URL
+      resumeCloudinaryPublicId: req.file.filename, // Cloudinary public_id
+      resumeFileSize: req.file.size,
+      
+      coverLetter: coverLetter || '',
+      
       employeeSnapshot: employeeSnapshot,
       jobSnapshot: {
         title: job.title,
@@ -85,12 +104,11 @@ exports.applyForJob = async (req, res) => {
         qualifications: job.qualifications,
         postedDate: job.postedDate
       },
-      employerSnapshot: job.employerSnapshot || {
+      employerSnapshot: {
         companyName: employer?.employerProfile?.companyName || '',
         logoUrl: employer?.employerProfile?.logoUrl || '',
         industry: employer?.employerProfile?.industry || ''
       },
-      coverLetter: coverLetter || '',
       status: 'pending'
     });
 
@@ -109,12 +127,11 @@ exports.applyForJob = async (req, res) => {
   }
 };
 
-// ==================== 2. GET EMPLOYER APPLICATIONS (Employer) ====================
+// ==================== GET EMPLOYER APPLICATIONS ====================
 exports.getEmployerApplications = async (req, res) => {
   try {
     const employerId = req.user.id;
 
-    // Check if employer
     const user = await User.findById(employerId);
     if (!user || user.role !== 'employer') {
       return res.status(403).json({ 
@@ -123,12 +140,10 @@ exports.getEmployerApplications = async (req, res) => {
       });
     }
 
-    // Get all applications for this employer's jobs
     const applications = await JobApplication.find({ employerId: employerId })
       .populate('jobId', 'title location type workplace')
       .sort({ appliedAt: -1 });
 
-    // Get counts by status
     const summary = {
       total: applications.length,
       pending: applications.filter(a => a.status === 'pending').length,
@@ -153,12 +168,11 @@ exports.getEmployerApplications = async (req, res) => {
   }
 };
 
-// ==================== 3. GET EMPLOYEE APPLICATIONS (Employee) ====================
+// ==================== GET EMPLOYEE APPLICATIONS ====================
 exports.getEmployeeApplications = async (req, res) => {
   try {
     const employeeId = req.user.id;
 
-    // Check if employee
     const user = await User.findById(employeeId);
     if (!user || user.role !== 'employee') {
       return res.status(403).json({ 
@@ -167,12 +181,10 @@ exports.getEmployeeApplications = async (req, res) => {
       });
     }
 
-    // Get all applications by this employee
     const applications = await JobApplication.find({ employeeId: employeeId })
       .populate('jobId', 'title company location type workplace employerSnapshot')
       .sort({ appliedAt: -1 });
 
-    // Get counts by status
     const summary = {
       total: applications.length,
       pending: applications.filter(a => a.status === 'pending').length,
