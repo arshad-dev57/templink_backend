@@ -1,4 +1,3 @@
-// models/JobApplication.js
 const mongoose = require('mongoose');
 
 const JobApplicationSchema = new mongoose.Schema({
@@ -20,6 +19,26 @@ const JobApplicationSchema = new mongoose.Schema({
     required: true 
   },
   
+  // 👇 YAHAN PE YE FIELDS ADD KARO (RESUME FIELDS)
+  resumeFileName: { 
+    type: String, 
+    required: true 
+  },
+  
+  resumeFileUrl: { 
+    type: String, 
+    required: true 
+  },
+  
+  resumeCloudinaryPublicId: { 
+    type: String 
+  },
+  
+  resumeFileSize: { 
+    type: Number 
+  },
+  // 👆 YAHAN TAK ADD KARO
+  
   // Employee ka snapshot (jo apply kar raha hai)
   employeeSnapshot: {
     firstName: { type: String, required: true },
@@ -27,7 +46,6 @@ const JobApplicationSchema = new mongoose.Schema({
     email: { type: String, required: true },
     country: { type: String, required: true },
     
-    // Employee Profile se
     title: { type: String, default: '' },
     experienceLevel: { type: String, default: '' },
     category: { type: String, default: '' },
@@ -36,7 +54,6 @@ const JobApplicationSchema = new mongoose.Schema({
     photoUrl: { type: String, default: '' },
     bio: { type: String, default: '' },
     
-    // Work Experience summary (latest 2)
     recentExperiences: [{
       title: String,
       company: String,
@@ -44,7 +61,6 @@ const JobApplicationSchema = new mongoose.Schema({
       endYear: String
     }],
     
-    // Education summary (latest)
     recentEducation: {
       degree: String,
       school: String,
@@ -55,7 +71,7 @@ const JobApplicationSchema = new mongoose.Schema({
     totalReviews: { type: Number, default: 0 }
   },
   
-  // Job ka snapshot (jis par apply kiya)
+  // Job ka snapshot
   jobSnapshot: {
     title: { type: String, required: true },
     company: { type: String, default: '' },
@@ -68,7 +84,7 @@ const JobApplicationSchema = new mongoose.Schema({
     postedDate: { type: Date }
   },
   
-  // Employer ka snapshot (jisko apply kiya)
+  // Employer ka snapshot
   employerSnapshot: {
     companyName: { type: String, default: '' },
     logoUrl: { type: String, default: '' },
@@ -84,24 +100,21 @@ const JobApplicationSchema = new mongoose.Schema({
     default: 'pending'
   },
   
-  // Employer ke actions ke liye
   employerNotes: { type: String, default: '' },
   reviewedAt: { type: Date },
   
-  // Cover Letter ya additional message (optional)
   coverLetter: { type: String, default: '' },
   
-  // Timestamps
   appliedAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
-// Indexes for faster queries
-JobApplicationSchema.index({ jobId: 1, employeeId: 1 }, { unique: true }); // Prevent duplicate applications
+// Indexes
+JobApplicationSchema.index({ jobId: 1, employeeId: 1 }, { unique: true });
 JobApplicationSchema.index({ employerId: 1, status: 1 });
 JobApplicationSchema.index({ employeeId: 1, appliedAt: -1 });
 
-// Update timestamp on save
+// Update timestamp
 JobApplicationSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
