@@ -4,19 +4,12 @@ const router = express.Router();
 const proposalController = require("../controllers/proposalController");
 const authMiddleware = require("../middleware/auth_middleware");
 
-/* ===========================
-   CREATE PROPOSAL
-=========================== */
 router.post(
   "/create",
   authMiddleware,
   proposalController.createProposal
 );
 
-
-/* ===========================
-   GET MY POINTS
-=========================== */
 router.get(
   "/my-points",
   authMiddleware,

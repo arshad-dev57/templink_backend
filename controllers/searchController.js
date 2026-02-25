@@ -221,7 +221,6 @@ exports.getSuggestions = async (req, res) => {
     const searchQuery = q.trim();
     const searchRegex = new RegExp(searchQuery, 'i');
     
-    // Get suggestions from all types
     const [projectTitles, jobTitles, talentNames, skills] = await Promise.all([
       Project.find({ title: searchRegex }).distinct('title').limit(5),
       JobPost.find({ title: searchRegex }).distinct('title').limit(5),

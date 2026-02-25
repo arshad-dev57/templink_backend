@@ -39,7 +39,8 @@ app.use('/api/milestone-payments', require('./routes/milestones_payment_routes')
 app.use('/api/submissions', require('./routes/submissionRoutes'));
 app.use('/api/invoices',require('./routes/invoice_routes'));
 app.use('/api/ratings',require('./routes/ratingRoutes'));
-app.use('/api/resumes', require('./routes/resumeRoutes'));
+app.use('/api/resume', require('./routes/resume_routes'));
+
 dbConnection();
 const server = http.createServer(app);
 initChatSocket(server);

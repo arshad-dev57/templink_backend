@@ -2,6 +2,8 @@ const User = require('../models/user_model');
 const Proposal = require('../models/Proposal');
 const Project = require('../models/project');
 const Contract = require('../models/Contract');
+// Add this at the top with other requires
+const { Wallet } = require('../models/Wallet');
 
 exports.getEmployeeStats = async (req, res) => {
   try {
@@ -9,6 +11,10 @@ exports.getEmployeeStats = async (req, res) => {
     
     console.log(`\n🟡 Fetching stats for employee: ${employeeId}`);
     const user = await User.findById(employeeId).select('employeeProfile pointsBalance');
+    
+    // Get wallet balance
+    const wallet = await Wallet.findOne({ userId: employeeId });
+    
     const proposals = await Proposal.find({ employeeId });
     const totalProposals = proposals.length;
     const acceptedProposals = proposals.filter(p => p.status === 'ACCEPTED').length;
@@ -93,6 +99,11 @@ exports.getEmployeeStats = async (req, res) => {
           ? Math.round(totalEarnings / contracts.length) 
           : 0
       },
+      // ADD WALLET BALANCE HERE
+      wallet: {
+        balance: wallet?.balance || 0,
+        currency: wallet?.currency || 'USD'
+      },
       performance: {
         averageRating: averageRating.toFixed(1),
         totalRatings: ratings.length,
@@ -118,7 +129,6 @@ exports.getEmployeeStats = async (req, res) => {
     });
   }
 };
-
 // ==================== GET EARNINGS HISTORY ====================
 exports.getEarningsHistory = async (req, res) => {
   try {
