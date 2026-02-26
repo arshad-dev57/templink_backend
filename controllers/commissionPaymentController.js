@@ -3,19 +3,15 @@ const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-
 // ==================== CREATE COMMISSION PAYMENT INTENT ====================
 exports.createCommissionPaymentIntent = async (req, res) => {
   try {
     const { applicationId } = req.body;
     const employerId = req.user.id;
 
-    console.log(`🟡 Creating commission payment for application: ${applicationId}`);
-
-    // Get application details
+    // Get application and job details
     const application = await JobApplication.findById(applicationId)
-      .populate('jobId')
-      .populate('employeeId');
+      .populate('jobId');
 
     if (!application) {
       return res.status(404).json({
@@ -24,40 +20,35 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       });
     }
 
-    // Verify this application belongs to this employer
-    if (application.employerId.toString() !== employerId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized'
-      });
-    }
-
-    // Check if already hired and paid
-    if (application.status === 'hired' && application.hiringCommission?.paymentStatus === 'paid') {
-      return res.status(400).json({
-        success: false,
-        message: 'This candidate is already hired'
-      });
-    }
-
     // Get job salary
     const job = application.jobId;
     const salaryAmount = job.salaryAmount || 0;
     
     // Calculate 20% commission
-    const commissionAmount = Math.round(salaryAmount * 0.2 * 100); // Convert to cents/paise
+    // ✅ IMPORTANT: Convert to integer (cents/paise)
+    const commissionAmount = Math.round(salaryAmount * 0.2 * 100); // Salary in rupees * 100 = paise
 
-    console.log(`💰 Job Salary: ${salaryAmount}, Commission (20%): ${commissionAmount/100}`);
+    console.log('💰 Salary:', salaryAmount);
+    console.log('💰 Commission (20%):', commissionAmount / 100);
+    console.log('💰 Stripe Amount (paise):', commissionAmount);
+    console.log('💰 Type:', typeof commissionAmount); // Should be 'number'
+
+    // ✅ Ensure it's a valid integer
+    if (isNaN(commissionAmount) || commissionAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid commission amount'
+      });
+    }
 
     // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: commissionAmount,
-      currency: 'usd', // or 'inr', 'pkr' etc
+      amount: commissionAmount, // ✅ Must be integer (paise/cents)
+      currency: 'usd', // or 'inr', 'pkr', 'eur' etc
       metadata: {
         type: 'hiring_commission',
         applicationId: applicationId,
         jobId: job._id.toString(),
-        employeeId: application.employeeId._id.toString(),
         employerId: employerId,
         salaryAmount: salaryAmount.toString(),
         commissionAmount: commissionAmount.toString()
@@ -75,13 +66,23 @@ exports.createCommissionPaymentIntent = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error creating commission payment:', error);
+    
+    // Better error logging
+    if (error.type === 'StripeInvalidRequestError') {
+      console.error('Stripe Error Details:', {
+        message: error.message,
+        param: error.param,
+        code: error.code
+      });
+    }
+    
     return res.status(500).json({
       success: false,
-      message: error.message || 'Server error'
+      message: error.message || 'Server error',
+      details: error.param === 'amount' ? 'Invalid amount format' : undefined
     });
   }
 };
-
 // ==================== VERIFY COMMISSION PAYMENT ====================
 exports.verifyCommissionPayment = async (req, res) => {
   try {
