@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const protect = require('../middleware/auth_middleware');
-const upload = require('../middleware/multer'); // Reuse your existing multer config
+const upload = require('../middleware/multer');
 const { 
   applyForJob,
   getEmployerApplications,
