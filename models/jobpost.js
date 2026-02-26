@@ -51,7 +51,31 @@ const jobPostSchema = new mongoose.Schema({
   requirements: { type: String, required: true },
   qualifications: { type: String, required: true },
   images: [{ type: String }],
+ protection: {
+    isActive: {
+      type: Boolean,
+      default: false
+    },
+    expiryDate: Date,
+    originalHireId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JobApplication'
+    },
+    originalEmployeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
 
+  // Hiring history
+  hireHistory: [{
+    applicationId: { type: mongoose.Schema.Types.ObjectId, ref: 'JobApplication' },
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    hiredAt: Date,
+    leftAt: Date,
+    commissionPaid: Number,
+    protectionUsed: Boolean
+  }],
   // ✅ Reference
   postedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 

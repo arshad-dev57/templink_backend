@@ -3,11 +3,10 @@ const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-// ==================== CREATE COMMISSION PAYMENT INTENT ====================
-// ==================== CREATE COMMISSION PAYMENT INTENT ====================
+// ============== CREATE COMMISSION PAYMENT (WITH PROTECTION CHECK) ==============
 exports.createCommissionPaymentIntent = async (req, res) => {
   try {
-    const { applicationId, staticAmount, useStatic } = req.body;  // 👈 1. Add these
+    const { applicationId } = req.body;
     const employerId = req.user.id;
 
     // Get application and job details
@@ -21,29 +20,65 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       });
     }
 
-    let commissionAmount;
+    const job = application.jobId;
+    const now = new Date();
 
-    // 👇 2. Check if using static amount for testing
-    if (useStatic && staticAmount) {
-      commissionAmount = staticAmount;
-      console.log('🧪 TEST MODE: Using static amount:', commissionAmount);
-      console.log('💰 Static Amount (cents):', commissionAmount);
-    } else {
-      // Get job salary
-      const job = application.jobId;
-      const salaryAmount = job.salaryAmount || 0;
+    // 👇 CHECK PROTECTION STATUS
+    let commissionAmount = 0;
+    let isFreeHire = false;
+
+    // Check if job has active protection
+    if (job.protection?.isActive && job.protection?.expiryDate > now) {
+      // FREE HIRE - No commission
+      isFreeHire = true;
+      commissionAmount = 0;
       
-      // Calculate 20% commission
-      commissionAmount = Math.round(salaryAmount * 0.2 * 100);
+      console.log('🎉 FREE HIRE! Job under protection. No commission.');
+      console.log('Protection expiry:', job.protection.expiryDate);
       
-      console.log('💰 Normal Mode - Salary:', salaryAmount);
-      console.log('💰 Commission (20%):', commissionAmount / 100);
+      // Mark application as hired directly (no payment)
+      application.status = 'hired';
+      application.hiredAt = now;
+      application.hiringCommission = {
+        salaryAmount: job.salaryAmount || 0,
+        commissionAmount: 0,
+        commissionRate: 20,
+        paymentStatus: 'free_hire_protection',
+        paidAt: now,
+        isFreeHire: true
+      };
+      
+      await application.save();
+
+      // Add to hire history
+      if (!job.hireHistory) job.hireHistory = [];
+      job.hireHistory.push({
+        applicationId: application._id,
+        employeeId: application.employeeId,
+        hiredAt: now,
+        commissionPaid: 0,
+        protectionUsed: true
+      });
+
+      // Deactivate protection (used up)
+      job.protection.isActive = false;
+      await job.save();
+
+      return res.status(200).json({
+        success: true,
+        isFreeHire: true,
+        message: 'Job under protection. Candidate hired without commission.',
+        application: application
+      });
     }
 
-    console.log('💰 Stripe Amount (cents):', commissionAmount);
-    console.log('💰 Type:', typeof commissionAmount);
+    // 👇 NORMAL HIRE - Calculate commission
+    const salaryAmount = job.salaryAmount || 0;
+    commissionAmount = Math.round(salaryAmount * 0.2 * 100);
 
-    // ✅ Ensure it's a valid integer
+    console.log('💰 Normal hire - Salary:', salaryAmount);
+    console.log('💰 Commission (20%):', commissionAmount / 100);
+
     if (isNaN(commissionAmount) || commissionAmount <= 0) {
       return res.status(400).json({
         success: false,
@@ -58,11 +93,10 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       metadata: {
         type: 'hiring_commission',
         applicationId: applicationId,
-        jobId: application.jobId._id.toString(),
+        jobId: job._id.toString(),
         employerId: employerId,
-        salaryAmount: (application.jobId.salaryAmount || 0).toString(),
-        commissionAmount: commissionAmount.toString(),
-        isTest: useStatic ? 'true' : 'false'  // 👈 3. Add test flag
+        salaryAmount: salaryAmount.toString(),
+        commissionAmount: commissionAmount.toString()
       }
     });
 
@@ -71,36 +105,25 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       amount: commissionAmount,
-      salaryAmount: application.jobId.salaryAmount || 0,
-      commissionAmount: commissionAmount
+      salaryAmount: salaryAmount,
+      commissionAmount: commissionAmount,
+      isFreeHire: false
     });
 
   } catch (error) {
     console.error('❌ Error creating commission payment:', error);
-    
-    if (error.type === 'StripeInvalidRequestError') {
-      console.error('Stripe Error Details:', {
-        message: error.message,
-        param: error.param,
-        code: error.code
-      });
-    }
-    
     return res.status(500).json({
       success: false,
-      message: error.message || 'Server error',
-      details: error.param === 'amount' ? 'Invalid amount format' : undefined
+      message: error.message
     });
   }
 };
-// ==================== VERIFY COMMISSION PAYMENT ====================
-// ==================== VERIFY COMMISSION PAYMENT ====================
+
+// ============== VERIFY COMMISSION PAYMENT (with history) ==============
 exports.verifyCommissionPayment = async (req, res) => {
   try {
     const { paymentIntentId, applicationId } = req.body;
     const employerId = req.user.id;
-
-    console.log(`🟡 Verifying commission payment: ${paymentIntentId}`);
 
     // Retrieve payment intent from Stripe
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -122,7 +145,8 @@ exports.verifyCommissionPayment = async (req, res) => {
     }
 
     // Update application
-    const application = await JobApplication.findById(applicationId);
+    const application = await JobApplication.findById(applicationId)
+      .populate('jobId');
     
     if (!application) {
       return res.status(404).json({
@@ -131,48 +155,47 @@ exports.verifyCommissionPayment = async (req, res) => {
       });
     }
 
-    // 👇 Check if this was a test payment
-    const isTest = paymentIntent.metadata.isTest === 'true';
-    
+    const now = new Date();
+
     // Mark as hired with commission paid
     application.status = 'hired';
+    application.hiredAt = now;
     application.hiringCommission = {
-      salaryAmount: isTest ? 0 : parseInt(paymentIntent.metadata.salaryAmount), // Test mode mein salary 0
+      salaryAmount: parseInt(paymentIntent.metadata.salaryAmount),
       commissionAmount: parseInt(paymentIntent.metadata.commissionAmount),
       commissionRate: 20,
       paymentStatus: 'paid',
-      paidAt: new Date(),
-      paymentId: paymentIntentId,
-      isTest: isTest  // Optional: track test payments
+      paidAt: now,
+      paymentId: paymentIntentId
     };
     
     await application.save();
 
-    // Update job status (only if not test mode)
-    if (!isTest) {
-      await JobPost.findByIdAndUpdate(application.jobId, {
-        status: 'filled',
-        hiredEmployeeId: application.employeeId
-      });
-    } else {
-      console.log('🧪 TEST MODE: Not updating job status');
-    }
+    // Add to job hire history
+    const job = await JobPost.findById(application.jobId);
+    if (!job.hireHistory) job.hireHistory = [];
+    job.hireHistory.push({
+      applicationId: application._id,
+      employeeId: application.employeeId,
+      hiredAt: now,
+      commissionPaid: parseInt(paymentIntent.metadata.commissionAmount),
+      protectionUsed: false
+    });
+    await job.save();
 
     console.log(`✅ Commission paid for application ${applicationId}`);
-    console.log(`💰 Admin commission: ${paymentIntent.metadata.commissionAmount/100}`);
-    if (isTest) console.log('🧪 This was a TEST payment');
 
     return res.status(200).json({
       success: true,
       message: 'Payment verified and candidate hired successfully',
-      isTest: isTest
+      application: application
     });
 
   } catch (error) {
     console.error('❌ Error verifying commission payment:', error);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Server error'
+      message: error.message
     });
   }
 };

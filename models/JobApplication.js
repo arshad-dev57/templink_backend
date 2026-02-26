@@ -37,6 +37,17 @@ const JobApplicationSchema = new mongoose.Schema({
   resumeFileSize: { 
     type: Number 
   },
+   employmentStatus: {
+    type: String,
+    enum: ['active', 'left', 'terminated'],
+    default: 'active'
+  },
+  leftAt: Date,
+  leftReason: String,
+  protectionEligible: {
+    type: Boolean,
+    default: false
+  },
   // 👆 YAHAN TAK ADD KARO
   
   // Employee ka snapshot (jo apply kar raha hai)
