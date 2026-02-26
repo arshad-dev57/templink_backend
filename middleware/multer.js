@@ -1,27 +1,32 @@
 // middleware/multer.js
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('../config/cloudinary'); // <- Yeh v2 export kar raha hai
+const cloudinary = require('../config/cloudinary');
 
 // Cloudinary storage configuration
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,  // <- Ab yeh sahi kaam karega
-  params: async (req, file) => {
-    // File type check
-    const allowedFormats = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
-    const fileExtension = file.mimetype.split('/')[1];
-    
-    if (!allowedFormats.includes(fileExtension)) {
-      throw new Error('Invalid file format');
+  cloudinary: cloudinary,
+  params: {
+    folder: 'projects_media',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'],
+    resource_type: 'auto',
+    format: async (req, file) => {
+      // Get extension from original filename
+      const ext = file.originalname.split('.').pop().toLowerCase();
+      
+      // Map extensions to Cloudinary format
+      if (ext === 'jpg' || ext === 'jpeg') return 'jpg';
+      if (ext === 'png') return 'png';
+      if (ext === 'pdf') return 'pdf';
+      if (ext === 'doc' || ext === 'docx') return 'docx';
+      
+      return ext; // fallback
+    },
+    public_id: (req, file) => {
+      const name = file.originalname.split('.')[0].replace(/[^a-zA-Z0-9]/g, '_');
+      return `${Date.now()}-${name}`;
     }
-
-    return {
-      folder: 'projects_media',
-      format: fileExtension, // Important: Format specify karo
-      public_id: `${Date.now()}-${file.originalname.split('.')[0]}`,
-      transformation: [{ width: 800, height: 800, crop: 'limit' }],
-    };
-  },
+  }
 });
 
 const upload = multer({
