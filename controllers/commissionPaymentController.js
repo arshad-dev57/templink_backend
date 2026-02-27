@@ -1,9 +1,80 @@
 const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
+const User = require('../models/user_model');
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
-// ============== CREATE COMMISSION PAYMENT (WITH PROTECTION CHECK) ==============
+// ============== HELPER: Add to Team Members ==============
+async function addToTeamMembers(employerId, employeeId, jobId, applicationId, jobTitle, hiredAt, commissionPaid = 0, isFreeHire = false) {
+  try {
+    const employer = await User.findById(employerId);
+    if (!employer || employer.role !== 'employer') return;
+
+    // Initialize employerProfile if needed
+    if (!employer.employerProfile) {
+      employer.employerProfile = {};
+    }
+    if (!employer.employerProfile.teamMembers) {
+      employer.employerProfile.teamMembers = [];
+    }
+
+    // Check if already in team (avoid duplicates)
+    const existingMember = employer.employerProfile.teamMembers.find(
+      member => member.employeeId.toString() === employeeId.toString() && 
+                member.jobId.toString() === jobId.toString() &&
+                member.status === 'active'
+    );
+
+    if (!existingMember) {
+      // Add to team members
+      employer.employerProfile.teamMembers.push({
+        employeeId: employeeId,
+        jobId: jobId,
+        applicationId: applicationId,
+        jobTitle: jobTitle,
+        hiredAt: hiredAt,
+        status: 'active',
+        commissionPaid: commissionPaid,
+        isFreeHire: isFreeHire
+      });
+
+      // Update stats
+      employer.employerProfile.totalHires = (employer.employerProfile.totalHires || 0) + 1;
+      employer.employerProfile.activeEmployees = (employer.employerProfile.activeEmployees || 0) + 1;
+
+      await employer.save();
+      console.log(`✅ Added employee ${employeeId} to team members of employer ${employerId}`);
+    }
+
+    // Also add to employee's myEmployers list
+    const employee = await User.findById(employeeId);
+    if (employee) {
+      if (!employee.myEmployers) employee.myEmployers = [];
+      
+      const existingEmployer = employee.myEmployers.find(
+        e => e.employerId.toString() === employerId.toString() && 
+             e.jobId.toString() === jobId.toString() &&
+             e.status === 'active'
+      );
+
+      if (!existingEmployer) {
+        employee.myEmployers.push({
+          employerId: employerId,
+          jobId: jobId,
+          jobTitle: jobTitle,
+          hiredAt: hiredAt,
+          status: 'active'
+        });
+        await employee.save();
+      }
+    }
+
+  } catch (error) {
+    console.error('Error adding to team members:', error);
+  }
+}
+
+// ============== CREATE COMMISSION PAYMENT ==============
 exports.createCommissionPaymentIntent = async (req, res) => {
   try {
     const { applicationId } = req.body;
@@ -20,7 +91,7 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       });
     }
 
-    // ✅ Check if already hired
+    // Check if already hired
     if (application.status === 'hired') {
       return res.status(400).json({
         success: false,
@@ -31,13 +102,13 @@ exports.createCommissionPaymentIntent = async (req, res) => {
     const job = application.jobId;
     const now = new Date();
 
-    // ✅ CHECK PROTECTION STATUS FIRST
+    // CHECK PROTECTION STATUS FIRST
     let commissionAmount = 0;
     let isFreeHire = false;
 
     // Check if job has active protection
     if (job.protection?.isActive && job.protection?.expiryDate > now) {
-      // ✅ FREE HIRE - No commission
+      // FREE HIRE - No commission
       isFreeHire = true;
       commissionAmount = 0;
       
@@ -67,21 +138,33 @@ exports.createCommissionPaymentIntent = async (req, res) => {
         protectionUsed: true
       });
 
-      // ✅ DEACTIVATE PROTECTION (used up)
+      // DEACTIVATE PROTECTION (used up)
       job.protection.isActive = false;
       await job.save();
+
+      // ✅ ADD TO TEAM MEMBERS
+      await addToTeamMembers(
+        employerId,
+        application.employeeId,
+        job._id,
+        application._id,
+        job.title,
+        now,
+        0,
+        true
+      );
 
       return res.status(200).json({
         success: true,
         isFreeHire: true,
-        message: 'Job under protection. Candidate hired without commission.',
+        message: 'Job under protection. Candidate hired without commission and added to team.',
         application: application
       });
     }
 
-    // ✅ NORMAL HIRE - Calculate 20% commission
-    const salaryAmount = job.salaryAmount || 5000; // Default if not set
-    commissionAmount = Math.round(salaryAmount * 0.2 * 100); // Convert to cents
+    // NORMAL HIRE - Calculate 20% commission
+    const salaryAmount = job.salaryAmount || 5000;
+    commissionAmount = Math.round(salaryAmount * 0.2 * 100);
 
     console.log('💰 Normal hire - Salary:', salaryAmount);
     console.log('💰 Commission (20%):', commissionAmount / 100);
@@ -174,7 +257,7 @@ exports.verifyCommissionPayment = async (req, res) => {
       paidAt: now,
       paymentId: paymentIntentId
     };
-    application.employmentStatus = 'active'; // Add this field
+    application.employmentStatus = 'active';
     
     await application.save();
 
@@ -192,11 +275,23 @@ exports.verifyCommissionPayment = async (req, res) => {
       await job.save();
     }
 
-    console.log(`✅ Commission paid for application ${applicationId}`);
+    // ✅ ADD TO TEAM MEMBERS
+    await addToTeamMembers(
+      employerId,
+      application.employeeId,
+      job._id,
+      application._id,
+      job.title,
+      now,
+      parseInt(paymentIntent.metadata.commissionAmount),
+      false
+    );
+
+    console.log(`✅ Commission paid for application ${applicationId} and added to team`);
 
     return res.status(200).json({
       success: true,
-      message: 'Payment verified and candidate hired successfully',
+      message: 'Payment verified, candidate hired successfully and added to team',
       application: application
     });
 
@@ -205,52 +300,6 @@ exports.verifyCommissionPayment = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message
-    });
-  }
-};
-exports.getCommissionHistory = async (req, res) => {
-  try {
-    // Only admin can access this
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required'
-      });
-    }
-
-    const applications = await JobApplication.find({
-      'hiringCommission.paymentStatus': 'paid'
-    })
-    .populate('jobId', 'title salaryAmount')
-    .populate('employeeId', 'firstName lastName email')
-    .populate('employerId', 'firstName lastName email employerProfile.companyName')
-    .sort({ 'hiringCommission.paidAt': -1 });
-
-    const totalCommission = applications.reduce((sum, app) => {
-      return sum + (app.hiringCommission?.commissionAmount || 0);
-    }, 0);
-
-    return res.status(200).json({
-      success: true,
-      totalCommission: totalCommission / 100, // Convert back from cents
-      count: applications.length,
-      data: applications.map(app => ({
-        id: app._id,
-        jobTitle: app.jobId?.title,
-        salaryAmount: app.hiringCommission?.salaryAmount,
-        commissionAmount: app.hiringCommission?.commissionAmount / 100,
-        paidAt: app.hiringCommission?.paidAt,
-        employeeName: `${app.employeeId?.firstName} ${app.employeeId?.lastName}`,
-        employerName: app.employerId?.employerProfile?.companyName || 
-                     `${app.employerId?.firstName} ${app.employerId?.lastName}`
-      }))
-    });
-
-  } catch (error) {
-    console.error('❌ Error fetching commission history:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Server error'
     });
   }
 };

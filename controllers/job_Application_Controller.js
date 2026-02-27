@@ -221,7 +221,6 @@ exports.getEmployerApplications = async (req, res) => {
   }
 };
 
-// ==================== GET EMPLOYEE APPLICATIONS ====================
 exports.getEmployeeApplications = async (req, res) => {
   try {
     const employeeId = req.user.id;

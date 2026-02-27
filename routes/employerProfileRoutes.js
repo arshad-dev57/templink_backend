@@ -11,6 +11,8 @@ router.use(auth);
 
 // GET employer profile
 router.get('/profile', employerProfileController.getEmployerProfile);
+router.get('/team-members', auth, employerProfileController.getTeamMembers);
+
 
 // UPDATE employer profile
 router.put('/profile', employerProfileController.updateEmployerProfile);
