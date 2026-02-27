@@ -12,5 +12,5 @@ const {
 router.post('/create-payment', auth, createCommissionPaymentIntent);
 router.post('/verify-payment', auth, verifyCommissionPayment);
 // Admin routes
-
+jo
 module.exports = router;
