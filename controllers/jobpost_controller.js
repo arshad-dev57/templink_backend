@@ -7,12 +7,12 @@ exports.createJobPost = async (req, res) => {
   const { title, company, workplace, location, type, about, requirements, qualifications, images } = req.body;
 
   try {
-    // ✅ token required
+    
     if (!req.user?.id) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    // ✅ get user from DB
+    
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -83,86 +83,78 @@ exports.createJobPost = async (req, res) => {
   }
 };
 
-// ==================== GET ALL JOB POSTS (FOR EMPLOYEES) ====================
+const JobPost = require('../models/jobpost');
+const User = require('../models/user_model');
+const JobApplication = require('../models/JobApplication');
+
+// ==================== GET ALL JOB POSTS (AUTH REQUIRED) ====================
 exports.getAllJobPosts = async (req, res) => {
   try {
-    // Get all active jobs (not filled/closed)
-    const jobPosts = await JobPost.find({ 
-      status: { $in: ['active', 'paused'] } // Show active and paused jobs
-    }).sort({ postedDate: -1 });
-
-    // If user is logged in (employee), check their application status for each job
-    let jobsWithStatus = jobPosts;
+    // ✅ Auth required - user一定会存在
+    const userId = req.user.id;
+    const user = await User.findById(userId);
     
-    if (req.user?.id) {
-      const employeeId = req.user.id;
-      const user = await User.findById(employeeId);
-      
-      if (user && user.role === 'employee') {
-        // Get all applications by this employee
-        const applications = await JobApplication.find({ 
-          employeeId: employeeId 
-        });
-        
-        // Create a map of jobId -> application status
-        const applicationMap = {};
-        applications.forEach(app => {
-          applicationMap[app.jobId.toString()] = {
-            status: app.status,
-            employmentStatus: app.employmentStatus,
-            appliedAt: app.appliedAt
-          };
-        });
-        
-        // Add application status to each job
-        jobsWithStatus = jobPosts.map(job => {
-          const jobObj = job.toObject();
-          const appStatus = applicationMap[job._id.toString()];
-          
-          if (appStatus) {
-            jobObj.applicationStatus = appStatus.status;
-            jobObj.employmentStatus = appStatus.employmentStatus;
-            jobObj.appliedAt = appStatus.appliedAt;
-            
-            // Determine if job is available for this employee
-            jobObj.canApply = 
-              appStatus.status === 'rejected' || 
-              (appStatus.status === 'hired' && appStatus.employmentStatus === 'left');
-            
-            // Reason why can't apply
-            if (!jobObj.canApply) {
-              if (appStatus.status === 'hired' && appStatus.employmentStatus === 'active') {
-                jobObj.cantApplyReason = 'You are currently hired for this job';
-              } else if (appStatus.status === 'pending') {
-                jobObj.cantApplyReason = 'Application pending';
-              } else if (appStatus.status === 'reviewed') {
-                jobObj.cantApplyReason = 'Application under review';
-              } else if (appStatus.status === 'shortlisted') {
-                jobObj.cantApplyReason = 'You are shortlisted';
-              }
-            }
-          } else {
-            jobObj.canApply = true;
-            jobObj.applicationStatus = null;
-          }
-          
-          return jobObj;
-        });
-      }
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
     }
 
+    // Get all jobs
+    const jobPosts = await JobPost.find().sort({ postedDate: -1 });
+
+    // Agar employee hai to filter karo
+    if (user.role === 'employee') {
+      // ✅ Get all jobs where employee is currently hired (active)
+      const hiredApplications = await JobApplication.find({
+        employeeId: userId,
+        status: 'hired',
+        employmentStatus: 'active'
+      });
+
+      // ✅ Get hired job IDs
+      const hiredJobIds = hiredApplications.map(app => app.jobId.toString());
+
+      // ✅ Filter out hired jobs
+      const filteredJobs = jobPosts.filter(job => 
+        !hiredJobIds.includes(job._id.toString())
+      );
+
+      return res.status(200).json({
+        success: true,
+        count: filteredJobs.length,
+        jobs: filteredJobs,
+        role: 'employee'
+      });
+    }
+    
+    // Agar employer hai to saari jobs dikhao
+    if (user.role === 'employer') {
+      return res.status(200).json({
+        success: true,
+        count: jobPosts.length,
+        jobs: jobPosts,
+        role: 'employer'
+      });
+    }
+
+    // Fallback
     return res.status(200).json({
       success: true,
-      count: jobsWithStatus.length,
-      jobs: jobsWithStatus
+      count: jobPosts.length,
+      jobs: jobPosts
     });
+
   } catch (error) {
     console.error('Error fetching job posts:', error);
-    return res.status(500).json({ message: 'Server error. Please try again later.' });
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Server error. Please try again later.' 
+    });
   }
 };
 
-// ==================== GET MY JOB POSTS (FOR EMPLOYER) ====================
 exports.getMyJobPosts = async (req, res) => {
   try {
     // ✅ auth required
