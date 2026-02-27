@@ -83,9 +83,7 @@ exports.createJobPost = async (req, res) => {
   }
 };
 
-const JobPost = require('../models/jobpost');
-const User = require('../models/user_model');
-const JobApplication = require('../models/JobApplication');
+
 
 // ==================== GET ALL JOB POSTS (AUTH REQUIRED) ====================
 exports.getAllJobPosts = async (req, res) => {
