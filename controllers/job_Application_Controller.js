@@ -78,11 +78,14 @@ exports.applyForJob = async (req, res) => {
       totalReviews: user.employeeProfile?.totalReviews || 0
     };
 
-    // Create application with resume file data
+    // 👇 Create application with employmentStatus field
     const application = await JobApplication.create({
       jobId: job._id,
       employeeId: employeeId,
       employerId: job.postedBy,
+      
+      // 👇 Add employmentStatus (default 'active')
+      employmentStatus: 'active',
       
       // Resume file info from multer/cloudinary
       resumeFileName: req.file.originalname,
@@ -144,6 +147,14 @@ exports.getEmployerApplications = async (req, res) => {
       .populate('jobId', 'title location type workplace')
       .sort({ appliedAt: -1 });
 
+    // 👇 Add employmentStatus in response
+    const formattedApps = applications.map(app => ({
+      ...app.toObject(),
+      employmentStatus: app.employmentStatus || 'active',
+      leftAt: app.leftAt,
+      leftReason: app.leftReason
+    }));
+
     const summary = {
       total: applications.length,
       pending: applications.filter(a => a.status === 'pending').length,
@@ -156,7 +167,7 @@ exports.getEmployerApplications = async (req, res) => {
     res.json({
       success: true,
       summary,
-      data: applications
+      data: formattedApps  // 👈 Send formatted apps
     });
 
   } catch (error) {
@@ -167,6 +178,7 @@ exports.getEmployerApplications = async (req, res) => {
     });
   }
 };
+
 // ==================== GET EMPLOYEE APPLICATIONS ====================
 exports.getEmployeeApplications = async (req, res) => {
   try {
@@ -180,32 +192,90 @@ exports.getEmployeeApplications = async (req, res) => {
       });
     }
 
-    // 👇 SIRF ACTIVE AUR HIRED APPLICATIONS (LEFT WALI MAT BHEJO)
+    // 👇 Get all applications (including left ones if needed)
     const applications = await JobApplication.find({ 
       employeeId: employeeId,
-      // employmentStatus: { $ne: 'left' }  // ✅ LEFT WALI NAHI BHEJNI
+      // employmentStatus: { $ne: 'left' }  // Uncomment to hide left jobs
     })
     .populate('jobId', 'title company location type workplace')
     .sort({ appliedAt: -1 });
 
-    // Count summary sirf active applications ka
+    // 👇 Format applications with employment status fields
+    const formattedApps = applications.map(app => ({
+      ...app.toObject(),
+      employmentStatus: app.employmentStatus || 'active',
+      leftAt: app.leftAt,
+      leftReason: app.leftReason
+    }));
+
+    // Count summary
     const summary = {
-      total: applications.length,
-      pending: applications.filter(a => a.status === 'pending').length,
-      reviewed: applications.filter(a => a.status === 'reviewed').length,
-      shortlisted: applications.filter(a => a.status === 'shortlisted').length,
-      rejected: applications.filter(a => a.status === 'rejected').length,
-      hired: applications.filter(a => a.status === 'hired').length
+      total: formattedApps.length,
+      pending: formattedApps.filter(a => a.status === 'pending').length,
+      reviewed: formattedApps.filter(a => a.status === 'reviewed').length,
+      shortlisted: formattedApps.filter(a => a.status === 'shortlisted').length,
+      rejected: formattedApps.filter(a => a.status === 'rejected').length,
+      hired: formattedApps.filter(a => a.status === 'hired').length
     };
 
     res.json({
       success: true,
       summary,
-      data: applications
+      data: formattedApps  // 👈 Send with employmentStatus
     });
 
   } catch (error) {
     console.error('Get employee apps error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error' 
+    });
+  }
+};
+
+// ==================== MARK APPLICATION AS LEFT ====================
+exports.markApplicationAsLeft = async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const { reason } = req.body;
+    const employeeId = req.user.id;
+
+    const application = await JobApplication.findById(applicationId);
+    
+    if (!application) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Application not found' 
+      });
+    }
+
+    // Verify employee owns this application
+    if (application.employeeId.toString() !== employeeId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized' 
+      });
+    }
+
+    // Update application
+    application.employmentStatus = 'left';
+    application.leftAt = new Date();
+    application.leftReason = reason || '';
+    
+    await application.save();
+
+    res.json({
+      success: true,
+      message: 'Job marked as left successfully',
+      data: {
+        employmentStatus: application.employmentStatus,
+        leftAt: application.leftAt,
+        leftReason: application.leftReason
+      }
+    });
+
+  } catch (error) {
+    console.error('Mark as left error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error' 
