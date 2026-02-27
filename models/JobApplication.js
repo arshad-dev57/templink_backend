@@ -98,7 +98,6 @@ const JobApplicationSchema = new mongoose.Schema({
     }
   },
   
-  // ============== EMPLOYEE SNAPSHOT (AT APPLICATION TIME) ==============
   employeeSnapshot: {
     // Basic Info
     firstName: { type: String, required: true },
@@ -142,7 +141,6 @@ const JobApplicationSchema = new mongoose.Schema({
     portfolio: { type: String, default: '' }
   },
   
-  // ============== JOB SNAPSHOT (AT APPLICATION TIME) ==============
   jobSnapshot: {
     // Basic Job Info
     title: { type: String, required: true },
@@ -153,15 +151,13 @@ const JobApplicationSchema = new mongoose.Schema({
       default: 'Onsite'
     },
     location: { type: String, required: true },
-    type: { type: String, required: true }, // Full-time, Part-time, etc.
+    type: { type: String, required: true }, 
     
-    // Job Details
     about: { type: String, required: true },
     requirements: { type: String, required: true },
     qualifications: { type: String, required: true },
     responsibilities: { type: String, default: '' },
     
-    // Salary
     salaryAmount: { type: Number, default: 0 },
     salaryCurrency: { type: String, default: 'USD' },
     salaryPeriod: { 
@@ -170,19 +166,15 @@ const JobApplicationSchema = new mongoose.Schema({
       default: 'monthly'
     },
     
-    // Dates
     postedDate: { type: Date },
     applicationDeadline: { type: Date },
     
-    // Category
     category: { type: String, default: '' },
     subCategory: { type: String, default: '' },
     
-    // Benefits
     benefits: [{ type: String }]
   },
-  
-  // ============== EMPLOYER SNAPSHOT ==============
+
   employerSnapshot: {
     companyName: { type: String, default: '' },
     logoUrl: { type: String, default: '' },
@@ -458,13 +450,12 @@ JobApplicationSchema.statics.getCommissionSummary = async function(employerId) {
   
   return {
     totalApplications: applications.length,
-    totalCommission: totalCommission / 100, // Convert from cents
+    totalCommission: totalCommission / 100,
     freeHires,
     paidHires: applications.length - freeHires
   };
 };
 
-// Get protection eligible jobs
 JobApplicationSchema.statics.getProtectionEligible = async function() {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -476,8 +467,6 @@ JobApplicationSchema.statics.getProtectionEligible = async function() {
   }).populate('jobId');
 };
 
-// ============== AGGREGATION PIPELINES ==============
-// Get monthly hire statistics
 JobApplicationSchema.statics.getMonthlyHireStats = async function(employerId, year) {
   return this.aggregate([
     {
