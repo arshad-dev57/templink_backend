@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const jobPostController = require('../controllers/jobpost_controller');
-const auth = require('../middleware/auth_middleware'); // ✅ import your auth middleware
+const auth = require('../middleware/auth_middleware');
 
-// ✅ Protected route (Bearer token required)
 router.post('/job', auth, jobPostController.createJobPost);
 
 // Public route

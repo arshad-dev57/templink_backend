@@ -43,7 +43,7 @@ app.use('/api/resume', require('./routes/resume_routes'));
 app.use('/api/jobapplication',require('./routes/jobApplicationRoutes'));
 app.use('/api/commission',require('./routes/commissionRoutes'));
 app.use('/api/protection', require('./routes/employeeLeaveRoutes'));
-
+app.use('/api/interest', require('./routes/interestRoutes'));
 dbConnection();
 const server = http.createServer(app);
 initChatSocket(server);
