@@ -73,8 +73,7 @@ async function addToTeamMembers(employerId, employeeId, jobId, applicationId, jo
     console.error('Error adding to team members:', error);
   }
 }
-
-// ============== CREATE COMMISSION PAYMENT ==============
+// ============== CREATE COMMISSION PAYMENT (WITH EMPLOYER LEVEL PROTECTION) ==============
 exports.createCommissionPaymentIntent = async (req, res) => {
   try {
     const { applicationId } = req.body;
@@ -102,17 +101,27 @@ exports.createCommissionPaymentIntent = async (req, res) => {
     const job = application.jobId;
     const now = new Date();
 
-    // CHECK PROTECTION STATUS FIRST
-    let commissionAmount = 0;
+    // ✅ CHECK EMPLOYER LEVEL PROTECTION FIRST
+    const employer = await User.findById(employerId);
     let isFreeHire = false;
+    let commissionAmount = 0;
 
-    // Check if job has active protection
-    if (job.protection?.isActive && job.protection?.expiryDate > now) {
-      // FREE HIRE - No commission
+    if (employer?.employerProfile?.protection?.isActive && 
+        employer.employerProfile.protection.expiryDate > now &&
+        employer.employerProfile.protection.remainingHires > 0) {
+      
+      // ✅ FREE HIRE - No commission
       isFreeHire = true;
       commissionAmount = 0;
       
-      console.log('🎉 FREE HIRE! Job under protection. No commission.');
+      console.log('🎉 FREE HIRE! Employer level protection active. No commission.');
+      
+      // Decrement remaining hires
+      employer.employerProfile.protection.remainingHires -= 1;
+      if (employer.employerProfile.protection.remainingHires <= 0) {
+        employer.employerProfile.protection.isActive = false;
+      }
+      await employer.save();
       
       // Mark application as hired directly
       application.status = 'hired';
@@ -137,12 +146,9 @@ exports.createCommissionPaymentIntent = async (req, res) => {
         commissionPaid: 0,
         protectionUsed: true
       });
-
-      // DEACTIVATE PROTECTION (used up)
-      job.protection.isActive = false;
       await job.save();
 
-      // ✅ ADD TO TEAM MEMBERS
+      // Add to team members
       await addToTeamMembers(
         employerId,
         application.employeeId,
@@ -157,14 +163,15 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       return res.status(200).json({
         success: true,
         isFreeHire: true,
-        message: 'Job under protection. Candidate hired without commission and added to team.',
+        message: 'Employer protection active! Candidate hired without commission.',
+        remainingHires: employer.employerProfile.protection.remainingHires,
         application: application
       });
     }
 
-    // NORMAL HIRE - Calculate 20% commission
+    // ✅ NORMAL HIRE - Calculate 20% commission
     const salaryAmount = job.salaryAmount || 5000;
-    commissionAmount = Math.round(salaryAmount * 0.2 * 100);
+    commissionAmount = Math.round(salaryAmount * 0.2 * 100); // Convert to cents
 
     console.log('💰 Normal hire - Salary:', salaryAmount);
     console.log('💰 Commission (20%):', commissionAmount / 100);
@@ -208,8 +215,6 @@ exports.createCommissionPaymentIntent = async (req, res) => {
     });
   }
 };
-
-// ============== VERIFY COMMISSION PAYMENT ==============
 exports.verifyCommissionPayment = async (req, res) => {
   try {
     const { paymentIntentId, applicationId } = req.body;

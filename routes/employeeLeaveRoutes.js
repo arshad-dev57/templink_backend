@@ -11,5 +11,7 @@ router.patch('/application/:applicationId/left', auth, employeeLeft);
 
 // Check job protection status
 router.get('/job/:jobId/protection', auth, checkJobProtection);
+router.get('/employer/protection', auth, checkEmployerProtection);
+
 
 module.exports = router;

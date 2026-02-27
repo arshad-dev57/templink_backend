@@ -1,5 +1,6 @@
 const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
+const User = require('../models/user_model');
 
 // ============== EMPLOYEE LEFT COMPANY ==============
 exports.employeeLeft = async (req, res) => {
@@ -29,7 +30,7 @@ exports.employeeLeft = async (req, res) => {
       });
     }
 
-    // ✅ Check if already marked as left
+    // Check if already marked as left
     if (application.employmentStatus === 'left') {
       return res.status(400).json({
         success: false,
@@ -40,71 +41,137 @@ exports.employeeLeft = async (req, res) => {
     const now = new Date();
     const hiredAt = application.hiredAt || application.createdAt;
     
-    // ✅ Calculate days worked
+    // Calculate days worked
     const diffTime = Math.abs(now - hiredAt);
     const daysWorked = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     console.log('📅 Days worked:', daysWorked);
 
-    // ✅ Update application
+    // Update application
     application.employmentStatus = 'left';
     application.leftAt = now;
     application.leftReason = reason || 'Not specified';
     
-    // ✅ Check if within 30 days
+    // ✅ Check if within 30 days for EMPLOYER LEVEL protection
     const within30Days = daysWorked <= 30;
 
     if (within30Days) {
-      // Get job and activate protection
-      const job = await JobPost.findById(application.jobId);
+      // Get employer
+      const employer = await User.findById(employerId);
       
-      if (!job) {
+      if (!employer) {
         return res.status(404).json({
           success: false,
-          message: 'Job not found'
+          message: 'Employer not found'
         });
       }
 
-      // Set protection expiry (30 days from now)
+      // Initialize employerProfile if needed
+      if (!employer.employerProfile) {
+        employer.employerProfile = {};
+      }
+
+      // ✅ ACTIVATE EMPLOYER LEVEL PROTECTION
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + 30);
 
-      job.protection = {
+      employer.employerProfile.protection = {
         isActive: true,
         expiryDate: expiryDate,
-        originalHireId: application._id,
-        originalEmployeeId: application.employeeId
+        remainingHires: 1, // Ek free hire available
+        totalFreeHires: 1,
+        originalEmployeeId: application.employeeId,
+        reason: reason || 'Employee left within 30 days',
+        activatedAt: now
       };
 
-      // Add to hire history
-      if (!job.hireHistory) job.hireHistory = [];
-      job.hireHistory.push({
-        applicationId: application._id,
+      // Add to protection history
+      if (!employer.employerProfile.protectionHistory) {
+        employer.employerProfile.protectionHistory = [];
+      }
+      
+      employer.employerProfile.protectionHistory.push({
         employeeId: application.employeeId,
+        jobId: application.jobId,
         hiredAt: hiredAt,
         leftAt: now,
-        commissionPaid: application.hiringCommission?.commissionAmount || 0,
-        protectionUsed: true,
-        daysWorked: daysWorked
+        daysWorked: daysWorked,
+        protectionGranted: true,
+        expiryDate: expiryDate
       });
 
-      await job.save();
+      await employer.save();
+
+      // Also update the specific job for reference
+      const job = await JobPost.findById(application.jobId);
+      if (job) {
+        // Add to job hire history
+        if (!job.hireHistory) job.hireHistory = [];
+        job.hireHistory.push({
+          applicationId: application._id,
+          employeeId: application.employeeId,
+          hiredAt: hiredAt,
+          leftAt: now,
+          commissionPaid: application.hiringCommission?.commissionAmount || 0,
+          protectionUsed: true,
+          daysWorked: daysWorked
+        });
+        await job.save();
+      }
 
       application.protectionEligible = true;
 
-      console.log('🛡️ Protection activated until:', expiryDate);
+      console.log('🛡️ EMPLOYER LEVEL protection activated until:', expiryDate);
+      console.log('🛡️ Free hires available: 1 for ALL jobs');
     }
 
     await application.save();
 
+    // ✅ UPDATE EMPLOYER'S TEAM MEMBERS
+    const employer = await User.findById(application.employerId);
+    if (employer && employer.employerProfile?.teamMembers) {
+      const teamMember = employer.employerProfile.teamMembers.find(
+        member => member.employeeId.toString() === application.employeeId.toString() &&
+                  member.status === 'active'
+      );
+
+      if (teamMember) {
+        teamMember.status = 'left';
+        teamMember.leftAt = now;
+        teamMember.leftReason = reason || 'Not specified';
+        
+        // Update active employees count
+        employer.employerProfile.activeEmployees = Math.max(0, (employer.employerProfile.activeEmployees || 1) - 1);
+        
+        await employer.save();
+      }
+    }
+
+    // ✅ UPDATE EMPLOYEE'S MYEMPLOYERS LIST
+    const employee = await User.findById(application.employeeId);
+    if (employee && employee.myEmployers) {
+      const employerRelation = employee.myEmployers.find(
+        e => e.employerId.toString() === application.employerId.toString() &&
+             e.status === 'active'
+      );
+
+      if (employerRelation) {
+        employerRelation.status = 'left';
+        employerRelation.leftAt = now;
+        await employee.save();
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: within30Days 
-        ? `✅ Employee left within 30 days (${daysWorked} days worked). Job is now protected for 30 days.`
+        ? `✅ Employee left within 30 days (${daysWorked} days worked). Employer now has FREE HIRE protection for ALL jobs for 30 days!`
         : `Employee left after 30 days (${daysWorked} days worked). No protection applied.`,
       daysWorked: daysWorked,
       protectionActivated: within30Days,
-      protectionExpiry: within30Days ? job.protection.expiryDate : null
+      protectionExpiry: within30Days ? employer.employerProfile.protection.expiryDate : null,
+      freeHiresAvailable: within30Days ? 1 : 0,
+      protectionType: 'employer_level'
     });
 
   } catch (error) {
@@ -115,7 +182,6 @@ exports.employeeLeft = async (req, res) => {
     });
   }
 };
-
 // ============== CHECK JOB PROTECTION STATUS ==============
 exports.checkJobProtection = async (req, res) => {
   try {
