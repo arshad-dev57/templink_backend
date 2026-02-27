@@ -1,8 +1,8 @@
-const User = require('../models/user_model');
 const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
 // ============== CREATE COMMISSION PAYMENT (WITH PROTECTION CHECK) ==============
 exports.createCommissionPaymentIntent = async (req, res) => {
   try {
@@ -20,23 +20,30 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       });
     }
 
+    // ✅ Check if already hired
+    if (application.status === 'hired') {
+      return res.status(400).json({
+        success: false,
+        message: 'This candidate is already hired'
+      });
+    }
+
     const job = application.jobId;
     const now = new Date();
 
-    // 👇 CHECK PROTECTION STATUS
+    // ✅ CHECK PROTECTION STATUS FIRST
     let commissionAmount = 0;
     let isFreeHire = false;
 
     // Check if job has active protection
     if (job.protection?.isActive && job.protection?.expiryDate > now) {
-      // FREE HIRE - No commission
+      // ✅ FREE HIRE - No commission
       isFreeHire = true;
       commissionAmount = 0;
       
       console.log('🎉 FREE HIRE! Job under protection. No commission.');
-      console.log('Protection expiry:', job.protection.expiryDate);
       
-      // Mark application as hired directly (no payment)
+      // Mark application as hired directly
       application.status = 'hired';
       application.hiredAt = now;
       application.hiringCommission = {
@@ -60,7 +67,7 @@ exports.createCommissionPaymentIntent = async (req, res) => {
         protectionUsed: true
       });
 
-      // Deactivate protection (used up)
+      // ✅ DEACTIVATE PROTECTION (used up)
       job.protection.isActive = false;
       await job.save();
 
@@ -72,9 +79,9 @@ exports.createCommissionPaymentIntent = async (req, res) => {
       });
     }
 
-    // 👇 NORMAL HIRE - Calculate commission
-    const salaryAmount = job.salaryAmount || 0;
-    commissionAmount = Math.round(salaryAmount * 0.2 * 100);
+    // ✅ NORMAL HIRE - Calculate 20% commission
+    const salaryAmount = job.salaryAmount || 5000; // Default if not set
+    commissionAmount = Math.round(salaryAmount * 0.2 * 100); // Convert to cents
 
     console.log('💰 Normal hire - Salary:', salaryAmount);
     console.log('💰 Commission (20%):', commissionAmount / 100);
@@ -119,7 +126,7 @@ exports.createCommissionPaymentIntent = async (req, res) => {
   }
 };
 
-// ============== VERIFY COMMISSION PAYMENT (with history) ==============
+// ============== VERIFY COMMISSION PAYMENT ==============
 exports.verifyCommissionPayment = async (req, res) => {
   try {
     const { paymentIntentId, applicationId } = req.body;
@@ -145,8 +152,7 @@ exports.verifyCommissionPayment = async (req, res) => {
     }
 
     // Update application
-    const application = await JobApplication.findById(applicationId)
-      .populate('jobId');
+    const application = await JobApplication.findById(applicationId);
     
     if (!application) {
       return res.status(404).json({
@@ -168,20 +174,23 @@ exports.verifyCommissionPayment = async (req, res) => {
       paidAt: now,
       paymentId: paymentIntentId
     };
+    application.employmentStatus = 'active'; // Add this field
     
     await application.save();
 
     // Add to job hire history
     const job = await JobPost.findById(application.jobId);
-    if (!job.hireHistory) job.hireHistory = [];
-    job.hireHistory.push({
-      applicationId: application._id,
-      employeeId: application.employeeId,
-      hiredAt: now,
-      commissionPaid: parseInt(paymentIntent.metadata.commissionAmount),
-      protectionUsed: false
-    });
-    await job.save();
+    if (job) {
+      if (!job.hireHistory) job.hireHistory = [];
+      job.hireHistory.push({
+        applicationId: application._id,
+        employeeId: application.employeeId,
+        hiredAt: now,
+        commissionPaid: parseInt(paymentIntent.metadata.commissionAmount),
+        protectionUsed: false
+      });
+      await job.save();
+    }
 
     console.log(`✅ Commission paid for application ${applicationId}`);
 
@@ -199,7 +208,6 @@ exports.verifyCommissionPayment = async (req, res) => {
     });
   }
 };
-// ==================== GET COMMISSION HISTORY (for admin) ====================
 exports.getCommissionHistory = async (req, res) => {
   try {
     // Only admin can access this
