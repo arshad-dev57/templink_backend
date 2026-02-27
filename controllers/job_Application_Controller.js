@@ -167,7 +167,6 @@ exports.getEmployerApplications = async (req, res) => {
     });
   }
 };
-
 // ==================== GET EMPLOYEE APPLICATIONS ====================
 exports.getEmployeeApplications = async (req, res) => {
   try {
@@ -181,10 +180,15 @@ exports.getEmployeeApplications = async (req, res) => {
       });
     }
 
-    const applications = await JobApplication.find({ employeeId: employeeId })
-      .populate('jobId', 'title company location type workplace employerSnapshot')
-      .sort({ appliedAt: -1 });
+    // 👇 SIRF ACTIVE AUR HIRED APPLICATIONS (LEFT WALI MAT BHEJO)
+    const applications = await JobApplication.find({ 
+      employeeId: employeeId,
+      // employmentStatus: { $ne: 'left' }  // ✅ LEFT WALI NAHI BHEJNI
+    })
+    .populate('jobId', 'title company location type workplace')
+    .sort({ appliedAt: -1 });
 
+    // Count summary sirf active applications ka
     const summary = {
       total: applications.length,
       pending: applications.filter(a => a.status === 'pending').length,
