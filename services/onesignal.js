@@ -4,22 +4,25 @@ function buildExternalId(mongoUserId) {
   const env = (process.env.ONESIGNAL_ENV || "dev").trim();
   return `${env}:${String(mongoUserId).trim()}`;
 }
-
-async function sendToUser({ mongoUserId, title, message, data = {} }) {
+async function sendToUser({ mongoUserId, subscriptionId, title, message, data = {} }) {
   const externalId = buildExternalId(mongoUserId);
 
   const payload = {
     app_id: process.env.ONESIGNAL_APP_ID,
-    target_channel: "push",
-    include_aliases: {
-      external_id: [externalId], // must be array
-    },
     headings: { en: title || "Templink" },
     contents: { en: message || "" },
-    data, // additionalData -> flutter me event.notification.additionalData
+    data,
   };
 
-  
+  // ✅ subscriptionId se bhejo agar available ho (foran kaam karta hai)
+  if (subscriptionId) {
+    payload.include_subscription_ids = [subscriptionId];
+  } else {
+    // Fallback: external_id (thodi der baad kaam karta hai)
+    payload.target_channel = "push";
+    payload.include_aliases = { external_id: [externalId] };
+  }
+
   const res = await axios.post(
     "https://api.onesignal.com/notifications?c=push",
     payload,
@@ -32,8 +35,7 @@ async function sendToUser({ mongoUserId, title, message, data = {} }) {
     }
   );
 
-  return res.data; // id, recipients etc
+  return res.data;
 }
-
 module.exports = { sendToUser, buildExternalId };
 

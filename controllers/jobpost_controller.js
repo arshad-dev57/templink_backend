@@ -2,7 +2,7 @@ const JobPost = require('../models/jobpost');
 const User = require('../models/user_model');
 const JobApplication = require('../models/JobApplication');
 
-// ==================== CREATE JOB POST ====================
+
 exports.createJobPost = async (req, res) => {
   const { title, company, workplace, location, type, about, requirements, qualifications, images } = req.body;
 
@@ -602,3 +602,292 @@ exports.getJobStatus = async (req, res) => {
     });
   }
 };
+
+// ==================== GET ALL JOB CATEGORIES (FROM EMPLOYEES) ====================
+exports.getAllJobCategories = async (req, res) => {
+  try {
+    console.log('\n🟡 ===== FETCHING JOB CATEGORIES STARTED =====');
+
+    // Saare employees ki categories fetch karo
+    const employees = await User.find({ 
+      role: 'employee',
+      'employeeProfile.category': { $ne: '' }  // Empty category ko exclude karo
+    }).select('employeeProfile.category');
+
+    // Unique categories nikaalo
+    const categoriesSet = new Set();
+    
+    employees.forEach(employee => {
+      const category = employee.employeeProfile?.category;
+      if (category && category.trim() !== '') {
+        categoriesSet.add(category.trim());
+      }
+    });
+
+    // Set ko array mein convert karo aur sort karo
+    const categories = Array.from(categoriesSet).sort();
+
+    console.log(`✅ Found ${categories.length} unique categories`);
+    console.log('📊 Categories:', categories);
+    console.log('🟢 ===== FETCHING JOB CATEGORIES ENDED =====\n');
+
+    return res.status(200).json({
+      success: true,
+      count: categories.length,
+      categories: categories
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching job categories:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error. Please try again later.'
+    });
+  }
+};
+
+// ==================== GET JOBS BY CATEGORY ====================
+exports.getJobsByCategory = async (req, res) => {
+  try {
+    const { category } = req.params;
+    const userId = req.user?.id;
+
+    console.log(`\n🟡 ===== FETCHING JOBS BY CATEGORY STARTED =====`);
+    console.log(`📂 Category: ${category}`);
+
+    if (!category || category.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Category parameter is required'
+      });
+    }
+
+    // Decode URL encoded category
+    const decodedCategory = decodeURIComponent(category);
+    console.log(`📌 Decoded category: ${decodedCategory}`);
+
+    // Pehle us category mein employees find karo
+    const employeesInCategory = await User.find({
+      role: 'employee',
+      'employeeProfile.category': decodedCategory
+    }).select('_id employeeProfile.category employeeProfile.skills employeeProfile.title');
+
+    const employeeIds = employeesInCategory.map(emp => emp._id);
+    console.log(`👥 Found ${employeeIds.length} employees in category: ${decodedCategory}`);
+
+    // Ab saari active jobs fetch karo
+    let jobs = await JobPost.find({ status: 'active' })
+      .sort({ postedDate: -1 })
+      .populate('postedBy', 'firstName lastName email employerProfile.companyName employerProfile.logoUrl');
+
+    // Filter jobs based on category matching with employees
+    const JobApplication = require('../models/JobApplication');
+    
+    // Har job ke liye check karo kitne employees is category se hain
+    const jobsWithCategoryInfo = await Promise.all(jobs.map(async (job) => {
+      const jobObj = job.toObject();
+      
+      // Find applications for this job
+      const applications = await JobApplication.find({ 
+        jobId: job._id,
+        employeeId: { $in: employeeIds }
+      });
+
+      // Get unique employees from this category who applied/hired
+      const uniqueEmployeeIds = [...new Set(applications.map(app => app.employeeId.toString()))];
+      
+      // Get employee details
+      const employees = employeesInCategory.filter(emp => 
+        uniqueEmployeeIds.includes(emp._id.toString())
+      ).map(emp => ({
+        id: emp._id,
+        title: emp.employeeProfile?.title || '',
+        skills: emp.employeeProfile?.skills || []
+      }));
+
+      jobObj.categoryEmployees = {
+        count: uniqueEmployeeIds.length,
+        employees: employees
+      };
+
+      // Agar koi employee is category ka nahi hai to job ko exclude karo (optional)
+      // Agar aap sirf woh jobs dikhana chahte hain jahan category ke employees hain
+      // to ye condition use karo
+      if (uniqueEmployeeIds.length === 0) {
+        return null; // Is job ko filter out karo
+      }
+
+      // Agar user logged in hai to check karo
+      if (userId) {
+        const user = await User.findById(userId);
+        if (user && user.role === 'employee') {
+          const application = await JobApplication.findOne({
+            jobId: job._id,
+            employeeId: userId
+          });
+          
+          if (application) {
+            jobObj.applicationStatus = application.status;
+            jobObj.employmentStatus = application.employmentStatus;
+            jobObj.canApply = application.status === 'rejected' || 
+                          (application.status === 'hired' && application.employmentStatus === 'left');
+          } else {
+            jobObj.canApply = true;
+          }
+        }
+      }
+
+      return jobObj;
+    }));
+
+    // Remove null values (jobs with no employees from this category)
+    const filteredJobs = jobsWithCategoryInfo.filter(job => job !== null);
+
+    console.log(`✅ Found ${filteredJobs.length} jobs for category: ${decodedCategory}`);
+    console.log('🟢 ===== FETCHING JOBS BY CATEGORY ENDED =====\n');
+
+    return res.status(200).json({
+      success: true,
+      category: decodedCategory,
+      totalEmployeesInCategory: employeesInCategory.length,
+      count: filteredJobs.length,
+      jobs: filteredJobs
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching jobs by category:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error. Please try again later.'
+    });
+  }
+};
+
+// ==================== GET JOBS BY MULTIPLE CATEGORIES ====================
+exports.getJobsByCategories = async (req, res) => {
+  try {
+    const { categories } = req.body; // Expecting array of categories
+    const userId = req.user?.id;
+
+    console.log(`\n🟡 ===== FETCHING JOBS BY MULTIPLE CATEGORIES STARTED =====`);
+    console.log(`📂 Categories:`, categories);
+
+    if (!categories || !Array.isArray(categories) || categories.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an array of categories'
+      });
+    }
+
+    // Decode categories
+    const decodedCategories = categories.map(cat => decodeURIComponent(cat));
+
+    // In categories mein employees find karo
+    const employeesInCategories = await User.find({
+      role: 'employee',
+      'employeeProfile.category': { $in: decodedCategories }
+    }).select('_id employeeProfile.category employeeProfile.skills employeeProfile.title');
+
+    const employeeIds = employeesInCategories.map(emp => emp._id);
+    console.log(`👥 Found ${employeeIds.length} employees in given categories`);
+
+    if (employeeIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        categories: decodedCategories,
+        count: 0,
+        jobs: [],
+        message: 'No employees found in these categories'
+      });
+    }
+
+    // Saari active jobs fetch karo
+    let jobs = await JobPost.find({ status: 'active' })
+      .sort({ postedDate: -1 })
+      .populate('postedBy', 'firstName lastName email employerProfile.companyName employerProfile.logoUrl');
+
+    const JobApplication = require('../models/JobApplication');
+    
+    // Har job ke liye check karo
+    const jobsWithCategoryInfo = await Promise.all(jobs.map(async (job) => {
+      const jobObj = job.toObject();
+      
+      // Find applications for this job
+      const applications = await JobApplication.find({ 
+        jobId: job._id,
+        employeeId: { $in: employeeIds }
+      });
+
+      if (applications.length === 0) {
+        return null; // Is job ko filter out karo
+      }
+
+      // Get unique employees
+      const uniqueEmployeeIds = [...new Set(applications.map(app => app.employeeId.toString()))];
+      
+      // Group employees by category
+      const employeesByCategory = {};
+      
+      employeesInCategories.forEach(emp => {
+        if (uniqueEmployeeIds.includes(emp._id.toString())) {
+          const category = emp.employeeProfile?.category || 'Uncategorized';
+          if (!employeesByCategory[category]) {
+            employeesByCategory[category] = [];
+          }
+          employeesByCategory[category].push({
+            id: emp._id,
+            title: emp.employeeProfile?.title || '',
+            skills: emp.employeeProfile?.skills || []
+          });
+        }
+      });
+
+      jobObj.categoryEmployees = {
+        total: uniqueEmployeeIds.length,
+        byCategory: employeesByCategory
+      };
+
+      // Check user application status
+      if (userId) {
+        const user = await User.findById(userId);
+        if (user && user.role === 'employee') {
+          const application = await JobApplication.findOne({
+            jobId: job._id,
+            employeeId: userId
+          });
+          
+          if (application) {
+            jobObj.applicationStatus = application.status;
+            jobObj.employmentStatus = application.employmentStatus;
+            jobObj.canApply = application.status === 'rejected' || 
+                          (application.status === 'hired' && application.employmentStatus === 'left');
+          } else {
+            jobObj.canApply = true;
+          }
+        }
+      }
+
+      return jobObj;
+    }));
+
+    const filteredJobs = jobsWithCategoryInfo.filter(job => job !== null);
+
+    console.log(`✅ Found ${filteredJobs.length} jobs for given categories`);
+    console.log('🟢 ===== FETCHING JOBS BY MULTIPLE CATEGORIES ENDED =====\n');
+
+    return res.status(200).json({
+      success: true,
+      categories: decodedCategories,
+      totalEmployeesInCategories: employeesInCategories.length,
+      count: filteredJobs.length,
+      jobs: filteredJobs
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching jobs by categories:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error. Please try again later.'
+    });
+  }
+};  

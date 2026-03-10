@@ -1,4 +1,3 @@
-
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
@@ -6,15 +5,19 @@ const http = require("http");
 const app = express();
 const dbConnection = require("./config/db");
 const { initChatSocket } = require("./sockets/chat_socket");
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
     message: "Backend running on localhost 🚀",
   });
-});
+}); 
+
+// Routes
 app.use("/api/proposals", require("./routes/proposalRoutes"));
 app.use("/api/users", require("./routes/user_routes"));
 app.use("/api/stripe", require("./routes/stripe_routes"));
@@ -37,18 +40,26 @@ app.use('/api/coins', require('./routes/coinPurchaseRoutes'));
 app.use('/api/wallet', require('./routes/wallet_routes'));
 app.use('/api/milestone-payments', require('./routes/milestones_payment_routes'));
 app.use('/api/submissions', require('./routes/submissionRoutes'));
-app.use('/api/invoices',require('./routes/invoice_routes'));
-app.use('/api/ratings',require('./routes/ratingRoutes'));
+app.use('/api/invoices', require('./routes/invoice_routes'));
+app.use('/api/ratings', require('./routes/ratingRoutes'));
 app.use('/api/resume', require('./routes/resume_routes'));
-app.use('/api/jobapplication',require('./routes/jobApplicationRoutes'));
-app.use('/api/commission',require('./routes/commissionRoutes'));
+app.use('/api/jobapplication', require('./routes/jobApplicationRoutes'));
+app.use('/api/commission', require('./routes/commissionRoutes'));
 app.use('/api/protection', require('./routes/employeeLeaveRoutes'));
 app.use('/api/interest', require('./routes/interestRoutes'));
 app.use('/api/balance', require('./routes/balance_routes'));
+
 dbConnection();
+
 const server = http.createServer(app);
+
+
 initChatSocket(server);
+// const callSocketIO = initCallSocket(server); 
+
 const PORT = process.env.PORT || 5000;
-server.listen(PORT,"0.0.0.0", () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
+  console.log(`📱 Chat Socket initialized`);
+  console.log(`📞 Call Socket initialized`);
 });

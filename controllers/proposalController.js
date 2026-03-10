@@ -4,6 +4,7 @@ const Project = require("../models/project");
 const PointsTransaction = require("../models/PointsTransaction");
 const proposal = require("../models/Contract");
 const mongoose = require("mongoose");
+const { sendToUser } = require('../services/onesignal');
 
 exports.getMyPoints = async (req, res) => {
   try {
@@ -20,7 +21,6 @@ exports.getMyPoints = async (req, res) => {
 };
 
 
-
 exports.createProposal = async (req, res) => {
   try {
     const {
@@ -35,7 +35,7 @@ exports.createProposal = async (req, res) => {
 
     const employeeId = req.user.id;
 
-    // 1️⃣ Check duplicate
+    // Check existing proposal
     const existing = await Proposal.findOne({
       projectId,
       employeeId,
@@ -47,7 +47,7 @@ exports.createProposal = async (req, res) => {
       });
     }
 
-    // 2️⃣ Check points
+    // Check points
     const user = await User.findById(employeeId);
 
     if (user.pointsBalance < 13) {
@@ -59,7 +59,7 @@ exports.createProposal = async (req, res) => {
     const serviceFee = fixedPrice * 0.20;
     const youWillReceive = fixedPrice - serviceFee;
 
-    // 3️⃣ Create Proposal
+    // Create Proposal
     const proposal = await Proposal.create({
       projectId,
       employeeId,
@@ -74,11 +74,11 @@ exports.createProposal = async (req, res) => {
       pointsUsed: 13,
     });
 
-    // 4️⃣ Deduct Points
+    // Deduct points
     user.pointsBalance -= 13;
     await user.save();
 
-    // 5️⃣ Record Transaction
+    // Record Transaction
     await PointsTransaction.create({
       userId: employeeId,
       type: "DEBIT",
@@ -87,10 +87,34 @@ exports.createProposal = async (req, res) => {
       relatedProposalId: proposal._id,
     });
 
-    // 6️⃣ Increment project proposal count
-    await Project.findByIdAndUpdate(projectId, {
-      $inc: { proposalsCount: 1 },
-    });
+    // Increment project proposal count
+    const project = await Project.findByIdAndUpdate(
+      projectId,
+      { $inc: { proposalsCount: 1 } },
+      { new: true } // ✅ Updated project wapas lo taake title mil sake
+    );
+
+    // ✅ Project owner ko notification bhejo
+    try {
+      const applicantName = `${user.firstName} ${user.lastName}`;
+
+      if (project?.postedBy) {
+        await sendToUser({
+          mongoUserId: project.postedBy.toString(),
+          title: "New Proposal Received! 💼",
+          message: `${applicantName} sent a proposal for "${project.title}"`,
+          data: {
+            type: "new_proposal",
+            screen: "proposals",
+            projectId: projectId.toString(),
+            proposalId: proposal._id.toString(),
+          }
+        });
+        console.log(`✅ Proposal notification sent to: ${project.postedBy}`);
+      }
+    } catch (notifError) {
+      console.log("⚠️ Proposal notification failed (non-fatal):", notifError.message);
+    }
 
     res.status(201).json({
       message: "Proposal submitted successfully",
@@ -102,6 +126,7 @@ exports.createProposal = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 exports.getMyProposals = async (req, res) => {
   try {
     const employeeId = req.user.id;
@@ -162,6 +187,7 @@ exports.getMyProposals = async (req, res) => {
 
 
 const Contract = require('../models/Contract'); // Add this import
+
 exports.acceptProposal = async (req, res) => {
   try {
     console.log("\n🟡 ===== ACCEPT PROPOSAL STARTED =====");
@@ -251,7 +277,7 @@ exports.acceptProposal = async (req, res) => {
     await project.save();
     console.log("✅ Project updated");
 
-    // 🆕 4️⃣ GENERATE CONTRACT
+    // 4️⃣ GENERATE CONTRACT
     console.log("\n📄 ===== CONTRACT GENERATION STARTED =====");
     
     const Contract = require('../models/Contract');
@@ -310,10 +336,32 @@ exports.acceptProposal = async (req, res) => {
     console.log("✅ Contract saved successfully!");
     console.log("📄 Contract ID:", contract._id);
 
-    // 🆕 5️⃣ UPDATE PROPOSAL WITH CONTRACT ID
+    // 5️⃣ UPDATE PROPOSAL WITH CONTRACT ID
     proposal.contractId = contract._id;
     await proposal.save();
     console.log("✅ Proposal updated with contract ID");
+
+    // ✅ 6️⃣ Employee ko notification bhejo
+    try {
+      const employeeUserId = proposal.employeeId._id.toString();
+      const applicantName = `${proposal.employeeId.firstName} ${proposal.employeeId.lastName}`;
+
+      await sendToUser({
+        mongoUserId: employeeUserId,
+        title: "Proposal Accepted! 🎉",
+        message: `Your proposal for "${project.title}" has been accepted`,
+        data: {
+          type: "proposal_accepted",
+          screen: "proposals",
+          projectId: project._id.toString(),
+          proposalId: proposal._id.toString(),
+          contractId: contract._id.toString(),
+        }
+      });
+      console.log(`✅ Acceptance notification sent to employee: ${employeeUserId}`);
+    } catch (notifError) {
+      console.log("⚠️ Notification failed (non-fatal):", notifError.message);
+    }
 
     console.log("\n🟢 ===== ACCEPT PROPOSAL COMPLETED =====");
     console.log("📤 Sending response to frontend...");

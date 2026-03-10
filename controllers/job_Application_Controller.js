@@ -1,17 +1,16 @@
 const JobPost = require('../models/jobpost');
 const User = require('../models/user_model');
 const JobApplication = require('../models/JobApplication');
+const { sendToUser } = require('../services/onesignal'); // ✅ Top pe add karo
 
-// @desc    Apply for job with PDF resume
-// @route   POST /api/job-applications/apply/:jobId
-// @access  Private (Employee only)
+
+
 exports.applyForJob = async (req, res) => {
   try {
     const { jobId } = req.params;
     const employeeId = req.user.id;
     const { coverLetter } = req.body;
 
-    // Check if file uploaded
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -19,58 +18,32 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
-    // Get user
     const user = await User.findById(employeeId);
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Check if employee
     if (user.role !== 'employee') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Only employees can apply' 
-      });
+      return res.status(403).json({ success: false, message: 'Only employees can apply' });
     }
 
-    // Get job
     const job = await JobPost.findById(jobId);
     if (!job) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Job not found' 
-      });
+      return res.status(404).json({ success: false, message: 'Job not found' });
     }
 
-    // ============== FIXED: CHECK EXISTING APPLICATIONS ==============
-    // ✅ Sirf wahi applications check karo jo:
-    // 1. Status 'rejected' nahi hai
-    // 2. EmploymentStatus 'left' nahi hai
-    // 3. Ya fir pending/reviewed/shortlisted/hired with active status
     const existing = await JobApplication.findOne({
       jobId: jobId,
       employeeId: employeeId,
       $or: [
-        { status: { $nin: ['rejected'] } }, // Rejected ko allow karo dobara apply karne
-        { 
-          status: 'hired',
-          employmentStatus: 'active' // Sirf active hired employees ko block karo
-        },
-        {
-          status: { $in: ['pending', 'reviewed', 'shortlisted'] },
-          employmentStatus: { $ne: 'left' } // Pending etc with left status allow karo
-        }
+        { status: { $nin: ['rejected'] } },
+        { status: 'hired', employmentStatus: 'active' },
+        { status: { $in: ['pending', 'reviewed', 'shortlisted'] }, employmentStatus: { $ne: 'left' } }
       ]
     });
 
-    // Agar koi active application exist karti hai to block karo
     if (existing) {
       let message = 'You have already applied for this job';
-      
-      // Custom message based on status
       if (existing.status === 'hired' && existing.employmentStatus === 'active') {
         message = 'You are currently hired for this job';
       } else if (existing.status === 'pending') {
@@ -80,10 +53,9 @@ exports.applyForJob = async (req, res) => {
       } else if (existing.status === 'shortlisted') {
         message = 'You have been shortlisted for this job';
       }
-      
       return res.status(400).json({ 
         success: false, 
-        message: message,
+        message,
         existingApplication: {
           status: existing.status,
           employmentStatus: existing.employmentStatus,
@@ -92,13 +64,8 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
-    // ✅ Agar employee ne pehle apply kiya tha aur left kar diya, to allow karo
-    // Ye check upar ke $or mein already handle ho gaya
-
-    // Get employer
     const employer = await User.findById(job.postedBy);
 
-    // Employee snapshot
     const employeeSnapshot = {
       firstName: user.firstName,
       lastName: user.lastName,
@@ -115,23 +82,16 @@ exports.applyForJob = async (req, res) => {
       totalReviews: user.employeeProfile?.totalReviews || 0
     };
 
-    // Create application with employmentStatus field
     const application = await JobApplication.create({
       jobId: job._id,
       employeeId: employeeId,
       employerId: job.postedBy,
-      
-      // Add employmentStatus (default 'active')
       employmentStatus: 'active',
-      
-      // Resume file info from multer/cloudinary
       resumeFileName: req.file.originalname,
       resumeFileUrl: req.file.path,
       resumeCloudinaryPublicId: req.file.filename,
       resumeFileSize: req.file.size,
-      
       coverLetter: coverLetter || '',
-      
       employeeSnapshot: employeeSnapshot,
       jobSnapshot: {
         title: job.title,
@@ -153,6 +113,27 @@ exports.applyForJob = async (req, res) => {
       status: 'pending'
     });
 
+    // ✅ Employer ko notification bhejo
+    try {
+      const applicantName = `${user.firstName} ${user.lastName}`;
+      
+      await sendToUser({
+        mongoUserId: job.postedBy.toString(),
+        title: "New Application Received! 🎉",
+        message: `${applicantName} applied for "${job.title}"`,
+        data: {
+          type: "new_application",
+          screen: "applications",
+          jobId: job._id.toString(),
+          applicationId: application._id.toString(),
+        }
+      });
+      
+      console.log(`✅ Notification sent to employer: ${job.postedBy}`);
+    } catch (notifError) {
+      console.log("⚠️ Notification failed (non-fatal):", notifError.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Applied successfully',
@@ -161,13 +142,9 @@ exports.applyForJob = async (req, res) => {
 
   } catch (error) {
     console.error('Apply error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
-    });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
-
 // ==================== GET EMPLOYER APPLICATIONS ====================
 exports.getEmployerApplications = async (req, res) => {
   try {

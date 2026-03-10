@@ -7,7 +7,7 @@
   function buildEmployerSnapshot(user) {
     const ep = user.employerProfile || {};
     return {
-      userId: user._id,
+      userId: user._id, 
 
       firstName: user.firstName,
       lastName: user.lastName,
