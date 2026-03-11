@@ -4,7 +4,8 @@ function buildExternalId(mongoUserId) {
   const env = (process.env.ONESIGNAL_ENV || "dev").trim();
   return `${env}:${String(mongoUserId).trim()}`;
 }
-async function sendToUser({ mongoUserId, subscriptionId, title, message, data = {} }) {
+
+async function sendToUser({ mongoUserId, subscriptionId, title, message, data = {}, collapseId }) {
   const externalId = buildExternalId(mongoUserId);
 
   const payload = {
@@ -12,6 +13,9 @@ async function sendToUser({ mongoUserId, subscriptionId, title, message, data = 
     headings: { en: title || "Templink" },
     contents: { en: message || "" },
     data,
+    // ✅ WhatsApp style: same collapseId wali purani notification replace ho jaati hai
+    // Har conversation ka alag collapseId hoga (e.g. "chat_<convoId>")
+    ...(collapseId ? { collapse_id: collapseId } : {}),
   };
 
   // ✅ subscriptionId se bhejo agar available ho (foran kaam karta hai)
@@ -37,5 +41,5 @@ async function sendToUser({ mongoUserId, subscriptionId, title, message, data = 
 
   return res.data;
 }
-module.exports = { sendToUser, buildExternalId };
 
+module.exports = { sendToUser, buildExternalId };

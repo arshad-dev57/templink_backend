@@ -392,3 +392,63 @@ exports.acceptProposal = async (req, res) => {
     });
   }
 };
+
+exports.withdrawProposal = async (req, res) => {
+  try {
+    const employeeId = req.user.id;
+    const { proposalId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(proposalId)) {
+      return res.status(400).json({ message: "Invalid proposal ID" });
+    }
+
+    const proposal = await Proposal.findById(proposalId);
+
+    if (!proposal) {
+      return res.status(404).json({ message: "Proposal not found" });
+    }
+
+    // ✅ Sirf apna proposal withdraw kar sakta hai
+    if (proposal.employeeId.toString() !== employeeId) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    // ✅ Sirf PENDING proposal withdraw ho sakta hai
+    if (proposal.status !== "PENDING") {
+      return res.status(400).json({
+        message: "Only pending proposals can be withdrawn",
+      });
+    }
+
+    // ✅ Status update karo
+    proposal.status = "WITHDRAWN";
+    await proposal.save();
+
+    // ✅ Project ka proposalsCount kam karo
+    await Project.findByIdAndUpdate(proposal.projectId, {
+      $inc: { proposalsCount: -1 },
+    });
+
+    // ✅ Points wapas karo
+    const user = await User.findById(employeeId);
+    user.pointsBalance += proposal.pointsUsed || 13;
+    await user.save();
+
+    // ✅ Points transaction record karo
+    await PointsTransaction.create({
+      userId: employeeId,
+      type: "CREDIT",
+      amount: proposal.pointsUsed || 13,
+      reason: "Proposal Withdrawn",
+      relatedProposalId: proposal._id,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Proposal withdrawn successfully",
+      remainingPoints: user.pointsBalance,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

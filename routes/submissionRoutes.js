@@ -1,16 +1,14 @@
-// routes/submissionRoutes.js
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth_middleware');
 const upload = require('../middleware/multer');
 const submissionController = require('../controllers/submissionController');
 
-// All routes require authentication
 router.use(auth);
 
 // ==================== EMPLOYEE ROUTES ====================
 
-// Submit work with file attachments (max 5 files)
+// Submit work with file attachments
 router.post(
   '/submit',
   upload.array('attachments', 5),
@@ -23,9 +21,11 @@ router.get(
   submissionController.getSubmissionStatus
 );
 
+router.post('/download-file', submissionController.downloadFile);
+  
 // ==================== EMPLOYER ROUTES ====================
 
-// Get submission by project and milestone (for employer review)
+// Get submission by project and milestone
 router.get(
   '/project/:projectId/milestone/:milestoneId',
   submissionController.getSubmissionByMilestone

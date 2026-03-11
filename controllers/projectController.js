@@ -1,6 +1,6 @@
   const Project = require('../models/project');
-  const User = require('../models/user_model'); // ⚠️ apna exact path set karna
-  const Contract = require('../models/Contract');  // 👈 YEH IMPORT MISSING THA
+  const User = require('../models/user_model'); 
+  const Contract = require('../models/Contract');  
 
   const mongoose = require("mongoose");
   // helper to build employer snapshot

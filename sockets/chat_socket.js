@@ -5,6 +5,8 @@ const jwt = require("jsonwebtoken");
 
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
+const User = require("../models/user_model");                          // ← NEW
+const { sendToUser } = require("../services/onesignal"); // ← NEW (tumhara existing service)
 
 const onlineUsers = new Map();
 
@@ -268,6 +270,63 @@ function initChatSocket(server) {
           unreadInc: incUnread,
         });
 
+        // 🔔 OneSignal — WhatsApp style: per-conversation stacked notification
+        if (!receiverInsideChat) {
+          try {
+            // Sender ka real naam DB se fetch karo (saare possible name fields try karo)
+            const sender = await User.findById(myId)
+              .select("name username firstName lastName fullName")
+              .lean();
+            const senderName =
+              sender?.fullName ||
+              sender?.name ||
+              (sender?.firstName
+                ? `${sender.firstName} ${sender.lastName || ""}`.trim()
+                : null) ||
+              sender?.username ||
+              "Someone";
+
+            const receiver = await User.findById(toUserId)
+              .select("oneSignalSubscriptionId _id")
+              .lean();
+
+            if (receiver) {
+              // Media messages ke liye emoji preview
+              const preview =
+                msg.type === "text"
+                  ? msg.text.length > 60
+                    ? msg.text.slice(0, 57) + "..."
+                    : msg.text
+                  : msg.type === "image"
+                  ? "📷 Photo"
+                  : msg.type === "video"
+                  ? "🎥 Video"
+                  : msg.type === "audio"
+                  ? "🎤 Voice message"
+                  : `[${msg.type}]`;
+
+              await sendToUser({
+                mongoUserId: receiver._id,
+                subscriptionId: receiver.oneSignalSubscriptionId || null,
+                title: `💬 ${senderName}`,
+                message: preview,
+                // ✅ WhatsApp style: same convo ki notifications ek mein collapse hoti hain
+                collapseId: `chat_${convoId}`,
+                data: {
+                  type: "new_message",
+                  conversationId: convoId,
+                  senderId: myId,
+                  senderName,
+                  messageType: msg.type,
+                },
+              });
+              console.log(`📲 OneSignal notification → ${toUserId} | from: ${senderName} | "${preview}"`);
+            }
+          } catch (err) {
+            console.error("❌ OneSignal message notification error:", err.message);
+          }
+        }
+
         return ack?.({ ok: true, conversationId: convoId, message: msg });
       } catch (e) {
         return ack?.({ ok: false, error: e.message });
@@ -319,17 +378,61 @@ function initChatSocket(server) {
       }
     });
 
-    // ================= VOICE CALL (signal only) =================
+    // ================= VOICE / VIDEO CALL =================
 
-    // ✅ UPDATED: callerName bhi forward karo
-    socket.on("call_invite", ({ toUserId, callType, callerName }) => {
+    // ✅ UPDATED: OneSignal notification bhi bhejta hai background ke liye
+    socket.on("call_invite", async ({ toUserId, callType, callerName }) => {
       if (!toUserId) return;
-      console.log(`📞 call_invite from ${myId} to ${toUserId} [${callType}]`);
+      console.log(`📞 call_invite from ${myId} → ${toUserId} [${callType}]`);
+
+      // DB se real naam fetch karo — client se aane wale callerName pe rely mat karo
+      let resolvedCallerName = callerName || "Someone";
+      try {
+        const callerDoc = await User.findById(myId)
+          .select("name username firstName lastName fullName")
+          .lean();
+        resolvedCallerName =
+          callerDoc?.fullName ||
+          callerDoc?.name ||
+          (callerDoc?.firstName
+            ? `${callerDoc.firstName} ${callerDoc.lastName || ""}`.trim()
+            : null) ||
+          callerDoc?.username ||
+          callerName ||
+          "Someone";
+      } catch (_) {}
+
+      // 1️⃣ Socket event — app foreground mein ho to yahi kafi hai
       io.to(`user:${toUserId}`).emit("call_incoming", {
         fromUserId: myId,
         callType,
-        callerName: callerName || "Unknown",
+        callerName: resolvedCallerName,
       });
+
+      // 2️⃣ OneSignal — app background ya killed ho tab bhi notify karo
+      try {
+        const receiver = await User.findById(toUserId)
+          .select("oneSignalSubscriptionId _id")
+          .lean();
+
+        if (receiver) {
+          await sendToUser({
+            mongoUserId: receiver._id,
+            subscriptionId: receiver.oneSignalSubscriptionId || null,
+            title: `📞 Incoming ${callType === "video" ? "Video" : "Voice"} Call`,
+            message: `${resolvedCallerName} is calling you`,
+            data: {
+              type: "incoming_call",
+              callerId: myId,
+              callerName: resolvedCallerName,
+              callType: callType || "audio",
+            },
+          });
+          console.log(`📲 OneSignal call notification sent → ${toUserId} from: ${resolvedCallerName}`);
+        }
+      } catch (err) {
+        console.error("❌ OneSignal call notification error:", err.message);
+      }
     });
 
     socket.on("call_accept", ({ toUserId, callType }) => {
