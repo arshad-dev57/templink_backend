@@ -13,16 +13,11 @@ async function sendToUser({ mongoUserId, subscriptionId, title, message, data = 
     headings: { en: title || "Templink" },
     contents: { en: message || "" },
     data,
-    // ✅ WhatsApp style: same collapseId wali purani notification replace ho jaati hai
-    // Har conversation ka alag collapseId hoga (e.g. "chat_<convoId>")
     ...(collapseId ? { collapse_id: collapseId } : {}),
   };
-
-  // ✅ subscriptionId se bhejo agar available ho (foran kaam karta hai)
   if (subscriptionId) {
     payload.include_subscription_ids = [subscriptionId];
   } else {
-    // Fallback: external_id (thodi der baad kaam karta hai)
     payload.target_channel = "push";
     payload.include_aliases = { external_id: [externalId] };
   }
