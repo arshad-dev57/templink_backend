@@ -6,8 +6,6 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
     const ext = file.originalname.split('.').pop().toLowerCase();
-    
-    // ✅ File type ke hisab se resource_type set karo
     let resourceType = 'image';
     
     if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip', 'rar'].includes(ext)) {
@@ -18,7 +16,7 @@ const storage = new CloudinaryStorage({
 
     return {
       folder: 'projects_media',
-      resource_type: resourceType, // ✅ 'raw' for PDFs/docs
+      resource_type: resourceType, 
       public_id: `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`,
     };
   },
