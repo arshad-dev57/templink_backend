@@ -58,7 +58,6 @@ exports.register = async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Parse nested objects
     let parsedEmployeeProfile = {};
     if (employeeProfile) {
       if (typeof employeeProfile === "string") {
@@ -115,24 +114,23 @@ exports.register = async (req, res) => {
         city: parsedEmployeeProfile.city || "",
         province: parsedEmployeeProfile.province || "",
         phoneNumber: parsedEmployeeProfile.phoneNumber || "",
-        workExperiences: Array.isArray(parsedEmployeeProfile.workExperiences) 
-          ? parsedEmployeeProfile.workExperiences 
+        workExperiences: Array.isArray(parsedEmployeeProfile.workExperiences)
+          ? parsedEmployeeProfile.workExperiences
           : [],
-        educations: Array.isArray(parsedEmployeeProfile.educations) 
-          ? parsedEmployeeProfile.educations 
+        educations: Array.isArray(parsedEmployeeProfile.educations)
+          ? parsedEmployeeProfile.educations
           : [],
-        portfolioProjects: Array.isArray(parsedEmployeeProfile.portfolioProjects) 
-          ? parsedEmployeeProfile.portfolioProjects 
+        portfolioProjects: Array.isArray(parsedEmployeeProfile.portfolioProjects)
+          ? parsedEmployeeProfile.portfolioProjects
           : [],
         rating: 0,
         totalReviews: 0,
       };
       userDoc.employerProfile = {};
-      
+
       console.log("✅ Employee profile prepared");
-      
+
     } else {
-      // ✅ FIXED: Properly assign employer profile with ALL fields
       userDoc.employerProfile = {
         companyName: parsedEmployerProfile.companyName || "",
         logoUrl: uploadedPhotoUrl || parsedEmployerProfile.logoUrl || "",
@@ -147,18 +145,18 @@ exports.register = async (req, res) => {
         linkedin: parsedEmployerProfile.linkedin || "",
         about: parsedEmployerProfile.about || "",
         mission: parsedEmployerProfile.mission || "",
-        cultureTags: Array.isArray(parsedEmployerProfile.cultureTags) 
-          ? parsedEmployerProfile.cultureTags 
+        cultureTags: Array.isArray(parsedEmployerProfile.cultureTags)
+          ? parsedEmployerProfile.cultureTags
           : [],
-        teamMembers: Array.isArray(parsedEmployerProfile.teamMembers) 
-          ? parsedEmployerProfile.teamMembers 
+        teamMembers: Array.isArray(parsedEmployerProfile.teamMembers)
+          ? parsedEmployerProfile.teamMembers
           : [],
         isVerifiedEmployer: false,
         rating: 0,
         sizeLabel: parsedEmployerProfile.companySize || "",
       };
       userDoc.employeeProfile = {};
-      
+
       console.log("✅ Employer profile prepared:", {
         companyName: userDoc.employerProfile.companyName,
         industry: userDoc.employerProfile.industry,
@@ -174,18 +172,43 @@ exports.register = async (req, res) => {
     console.log("✅ User created with ID:", user._id);
     console.log("✅ Role:", user.role);
 
+    // ✅ Get image URL based on role
+    let imageUrl = '';
+    if (user.role === 'employee') {
+      imageUrl = user.employeeProfile?.photoUrl || '';
+    } else {
+      imageUrl = user.employerProfile?.logoUrl || '';
+    }
+
+    // ✅ Prepare user response with all necessary fields
+    const userResponse = {
+      _id: user._id,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      country: user.country,
+      status: user.status,
+      pointsBalance: user.pointsBalance,
+      imageUrl: imageUrl,
+      employeeProfile: user.employeeProfile,
+      employerProfile: user.employerProfile,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+
     return res.status(201).json({
       message: "Registered successfully",
       token,
-      user: user.toJSON(),
+      user: userResponse,
     });
-    
+
   } catch (err) {
     console.error("❌ REGISTER_ERROR:", err);
     return res.status(500).json({ message: err.message || "Server error" });
   }
 };
-// ✅ UPDATED: Login function with image and name
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -223,8 +246,7 @@ exports.login = async (req, res) => {
       country: user.country,
       status: user.status,
       pointsBalance: user.pointsBalance,
-      imageUrl: imageUrl, // ✅ Add image URL
-      // Include full profiles if needed
+      imageUrl: imageUrl,
       employeeProfile: user.employeeProfile,
       employerProfile: user.employerProfile,
       createdAt: user.createdAt,
@@ -234,15 +256,15 @@ exports.login = async (req, res) => {
     return res.status(200).json({
       message: "Login successful",
       token,
-      user: userResponse, // ✅ Send enhanced user object
+      user: userResponse,
     });
-    
+
   } catch (err) {
     console.error("LOGIN_ERROR:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
-// ✅ UPDATED: Google Auth function with image
+
 exports.googleAuth = async (req, res) => {
   try {
     const { idToken, role, country, sendEmails = false, termsAccepted = false } = req.body;
@@ -256,7 +278,6 @@ exports.googleAuth = async (req, res) => {
       return res.status(400).json({ message: "You must accept terms & conditions." });
     }
 
-    // ✅ verify google token
     const ticket = await googleClient.verifyIdToken({
       idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -271,20 +292,17 @@ exports.googleAuth = async (req, res) => {
 
     let user = await User.findOne({ email });
 
-    // ✅ if existing user is not google-linked, block (avoid takeover)
     if (user && user.authProvider && user.authProvider !== "google") {
       return res.status(409).json({
         message: "Email already registered with password. Please login with password.",
       });
     }
 
-    // ✅ create if not exists
     if (!user) {
       const parts = fullName.split(/\s+/).filter(Boolean);
       const firstName = payload.given_name || parts[0] || "";
       const lastName = payload.family_name || (parts.length > 1 ? parts.slice(1).join(" ") : "");
 
-      // random password hash (password login won't be used unless you add set-password flow)
       const randomPass = crypto.randomBytes(16).toString("hex");
       const passwordHash = await bcrypt.hash(randomPass, 10);
 
@@ -312,7 +330,6 @@ exports.googleAuth = async (req, res) => {
 
       user = await User.create(userDoc);
     } else {
-      // ✅ sync googleId if missing
       if (!user.googleId) {
         user.googleId = googleId;
         user.authProvider = "google";
@@ -340,7 +357,7 @@ exports.googleAuth = async (req, res) => {
       country: user.country,
       status: user.status,
       pointsBalance: user.pointsBalance,
-      imageUrl: imageUrl, // ✅ Add image URL
+      imageUrl: imageUrl,
       employeeProfile: user.employeeProfile,
       employerProfile: user.employerProfile,
       createdAt: user.createdAt,
@@ -350,9 +367,9 @@ exports.googleAuth = async (req, res) => {
     return res.status(200).json({
       message: "Google auth successful",
       token,
-      user: userResponse, // ✅ Send enhanced user object
+      user: userResponse,
     });
-    
+
   } catch (err) {
     console.error("GOOGLE_AUTH_ERROR:", err);
     return res.status(500).json({ message: "Server error" });

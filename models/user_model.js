@@ -68,7 +68,7 @@ const EmployeeProfileSchema = new mongoose.Schema(
 );
 
 /* ===========================
-  Employer Schema (COMPLETE with Protection)
+  Employer Schema (COMPLETE with Protection & Office Hours)
 =========================== */
 
 const EmployerProfileSchema = new mongoose.Schema(
@@ -90,6 +90,13 @@ const EmployerProfileSchema = new mongoose.Schema(
     cultureTags: { type: [String], default: [] },     
     isVerifiedEmployer: { type: Boolean, default: false },
     rating: { type: Number, default: 0 },
+    
+    // ✅ OFFICE HOURS - NEW FIELD ADDED
+    officeHours: {
+      checkIn: { type: String, default: '09:00' },
+      checkOut: { type: String, default: '18:00' },
+      gracePeriod: { type: Number, default: 10 }
+    },
     
     // ============== TEAM MEMBERS ==============
     teamMembers: [
@@ -120,12 +127,11 @@ const EmployerProfileSchema = new mongoose.Schema(
       }
     ],
 
-    
     protection: {
       isActive: { type: Boolean, default: false },
       expiryDate: Date,
-      remainingHires: { type: Number, default: 0 }, // Kitni free hires available
-      totalFreeHires: { type: Number, default: 0 }, // Total free hires granted
+      remainingHires: { type: Number, default: 0 },
+      totalFreeHires: { type: Number, default: 0 },
       originalEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       originalJobId: { type: mongoose.Schema.Types.ObjectId, ref: 'JobPost' },
       reason: String,
@@ -152,7 +158,7 @@ const EmployerProfileSchema = new mongoose.Schema(
       activeEmployees: { type: Number, default: 0 },
       totalFreeHiresUsed: { type: Number, default: 0 },
       totalCommissionPaid: { type: Number, default: 0 },
-      averageEmployeeTenure: { type: Number, default: 0 } // in days
+      averageEmployeeTenure: { type: Number, default: 0 }
     }
   },
   { _id: false }
@@ -193,7 +199,7 @@ const UserSchema = new mongoose.Schema(
     /* POINTS WALLET */
     pointsBalance: {
       type: Number,
-      default: 100,   // signup bonus
+      default: 100,
     },
 
     pointsHistory: [
@@ -215,7 +221,7 @@ const UserSchema = new mongoose.Schema(
       default: () => ({}) 
     },
     
-    // ✅ Employee ke liye - jobs where they are/were hired
+    // Employee ke liye - jobs where they are/were hired
     myEmployers: [
       {
         employerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -230,7 +236,7 @@ const UserSchema = new mongoose.Schema(
       }
     ],
 
-    // ✅ Notification Settings
+    // Notification Settings
     notificationSettings: {
       emailNotifications: { type: Boolean, default: true },
       pushNotifications: { type: Boolean, default: true },

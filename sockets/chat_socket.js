@@ -238,8 +238,7 @@ function initChatSocket(server) {
     socket.on("webrtc_offer",          ({ toUserId, sdp }) => { if (toUserId) io.to(`user:${toUserId}`).emit("webrtc_offer", { fromUserId: myId, sdp }); });
     socket.on("webrtc_answer",         ({ toUserId, sdp }) => { if (toUserId) io.to(`user:${toUserId}`).emit("webrtc_answer", { fromUserId: myId, sdp }); });
     socket.on("webrtc_ice_candidate",  ({ toUserId, candidate }) => { if (toUserId) io.to(`user:${toUserId}`).emit("webrtc_ice_candidate", { fromUserId: myId, candidate }); });
-
-    // ── Video Call ─────────────────────────────────────────
+ 
 
     socket.on("video_call_invite", async ({ toUserId, callerName }) => {
       if (!toUserId) return;
@@ -252,8 +251,6 @@ function initChatSocket(server) {
         callType: "video",
         callerName: name,
       });
-
-      // OneSignal — app background/killed
       try {
         const receiver = await User.findById(toUserId).select("oneSignalSubscriptionId _id").lean();
         if (receiver) {
@@ -304,7 +301,6 @@ function initChatSocket(server) {
       io.to(`user:${toUserId}`).emit("video_camera_toggle", { fromUserId: myId, cameraOff: !!cameraOff });
     });
 
-    // ── Disconnect ─────────────────────────────────────────
     socket.on("disconnect", () => {
       removeOnline(myId, socket.id);
       if (!isUserOnline(myId)) io.emit("presence", { userId: myId, online: false });

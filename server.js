@@ -2,6 +2,7 @@ const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
 const http = require("http");
+const https = require("https");
 const app = express();
 const dbConnection = require("./config/db");
 const { initChatSocket } = require("./sockets/chat_socket");
@@ -15,7 +16,16 @@ app.get("/", (req, res) => {
     success: true,
     message: "Backend running on localhost 🚀",
   });
-}); 
+});
+
+// ✅ Ping route — keeps Render free tier alive
+app.get("/ping", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "pong 🏓",
+    time: new Date().toISOString(),
+  });
+});
 
 // Routes
 app.use("/api/proposals", require("./routes/proposalRoutes"));
@@ -48,18 +58,39 @@ app.use('/api/commission', require('./routes/commissionRoutes'));
 app.use('/api/protection', require('./routes/employeeLeaveRoutes'));
 app.use('/api/interest', require('./routes/interestRoutes'));
 app.use('/api/balance', require('./routes/balance_routes'));
+app.use('/api/attendance-dashboard', require('./routes/employer_attandance_routes'));
+app.use('/api/employee-dashboard', require('./routes/employee_attendance_dashboard_routes'));
+app.use('/api/employer-attendance-history', require('./routes/employer_attendance_history_routes'));
+app.use('/api/employee-leave', require('./routes/employee_leave_routes'));
+app.use('/api/employer-leave', require('./routes/employer_leave_routes'));
+app.use("/api/employee-timesheet", require("./routes/employee_timesheet_routes"));
+app.use('/api/employer-timesheet', require('./routes/employer_timesheet_routes'));
 
 dbConnection();
 
 const server = http.createServer(app);
 
-
 initChatSocket(server);
-// const callSocketIO = initCallSocket(server); 
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`📱 Chat Socket initialized`);
   console.log(`📞 Call Socket initialized`);
+
+  // ✅ Self-ping — Render free tier ko soone nahi deta
+  const RENDER_URL = process.env.RENDER_URL || `http://localhost:${PORT}`;
+  setInterval(() => {
+    try {
+      const client = RENDER_URL.startsWith("https") ? https : http;
+      client.get(`${RENDER_URL}/ping`, (res) => {
+        console.log(`🏓 Self-ping sent — status: ${res.statusCode} — ${new Date().toISOString()}`);
+      }).on("error", (e) => {
+        console.log(`⚠️ Self-ping failed: ${e.message}`);
+      });
+    } catch (e) {
+      console.log(`⚠️ Self-ping error: ${e.message}`);
+    }
+  }, 14 * 60 * 1000); // har 14 minute mein ping
 });
+
