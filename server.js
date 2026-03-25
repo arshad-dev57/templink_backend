@@ -18,7 +18,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// ✅ Ping route — keeps Render free tier alive
 app.get("/ping", (req, res) => {
   res.status(200).json({
     success: true,
@@ -27,7 +26,6 @@ app.get("/ping", (req, res) => {
   });
 });
 
-// Routes
 app.use("/api/proposals", require("./routes/proposalRoutes"));
 app.use("/api/users", require("./routes/user_routes"));
 app.use("/api/stripe", require("./routes/stripe_routes"));
@@ -65,6 +63,7 @@ app.use('/api/employee-leave', require('./routes/employee_leave_routes'));
 app.use('/api/employer-leave', require('./routes/employer_leave_routes'));
 app.use("/api/employee-timesheet", require("./routes/employee_timesheet_routes"));
 app.use('/api/employer-timesheet', require('./routes/employer_timesheet_routes'));
+app.use('/api/tasks', require('./routes/tasks_routes'));
 
 dbConnection();
 
@@ -77,8 +76,6 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`📱 Chat Socket initialized`);
   console.log(`📞 Call Socket initialized`);
-
-  // ✅ Self-ping — Render free tier ko soone nahi deta
   const RENDER_URL = process.env.RENDER_URL || `http://localhost:${PORT}`;
   setInterval(() => {
     try {
@@ -91,6 +88,6 @@ server.listen(PORT, "0.0.0.0", () => {
     } catch (e) {
       console.log(`⚠️ Self-ping error: ${e.message}`);
     }
-  }, 14 * 60 * 1000); // har 14 minute mein ping
+  }, 14 * 60 * 1000); 
 });
 

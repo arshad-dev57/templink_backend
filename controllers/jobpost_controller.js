@@ -2,9 +2,19 @@ const JobPost = require('../models/jobpost');
 const User = require('../models/user_model');
 const JobApplication = require('../models/JobApplication');
 
-
 exports.createJobPost = async (req, res) => {
-  const { title, company, workplace, location, type, about, requirements, qualifications, images } = req.body;
+  const { 
+    title, 
+    company, 
+    workplace, 
+    location, 
+    type, 
+    about, 
+    requirements, 
+    qualifications, 
+    subcategories, // ✅ Added subcategories
+    images 
+  } = req.body;
 
   try {
     
@@ -65,6 +75,7 @@ exports.createJobPost = async (req, res) => {
       about,
       requirements,
       qualifications,
+      subcategories: subcategories || [], // ✅ Add subcategories with default empty array
       images,
       status: 'active', // Default status
       postedBy: user._id,         
@@ -82,10 +93,6 @@ exports.createJobPost = async (req, res) => {
     return res.status(500).json({ message: 'Server error. Please try again later.' });
   }
 };
-
-
-
-// ==================== GET ALL JOB POSTS (AUTH REQUIRED) ====================
 exports.getAllJobPosts = async (req, res) => {
   try {
     // ✅ Auth required - user一定会存在

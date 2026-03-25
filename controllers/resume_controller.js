@@ -1,5 +1,6 @@
 const Resume = require('../models/Resume');
 const cloudinary = require('../config/cloudinary'); // v2 export
+const User = require('../models/user_model'); // ✅ Add this import
 
 // @desc    Upload a new resume (PDF)
 // @route   POST /api/resumes
@@ -116,5 +117,106 @@ exports.setDefaultResume = async (req, res) => {
   } catch (error) {
     console.error('Set default resume error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+
+// Add this method to your resume controller
+
+// ==================== SELECT RESUME ====================
+exports.selectResume = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { resumeId } = req.params;
+    
+    // Find the user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Check if resume exists and belongs to user
+    const resume = await Resume.findOne({
+      _id: resumeId,
+      userId: userId
+    });
+    
+    if (!resume) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resume not found or does not belong to you'
+      });
+    }
+    
+    // Update user's selected resume
+    user.selectedResumeId = resumeId;
+    await user.save();
+    
+    // Return the selected resume details
+    res.json({
+      success: true,
+      message: 'Resume selected successfully',
+      data: {
+        resumeId: resume._id,
+        fileName: resume.fileName,
+        fileUrl: resume.fileUrl,
+        uploadDate: resume.uploadDate,
+        fileSize: resume.fileSize,
+        isDefault: resume.isDefault
+      }
+    });
+    
+  } catch (error) {
+    console.error('Select resume error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// ==================== GET SELECTED RESUME ====================
+exports.getSelectedResume = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const user = await User.findById(userId).populate('selectedResumeId');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    if (!user.selectedResumeId) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No resume selected'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        id: user.selectedResumeId._id,
+        fileName: user.selectedResumeId.fileName,
+        fileUrl: user.selectedResumeId.fileUrl,
+        uploadDate: user.selectedResumeId.uploadDate,
+        fileSize: user.selectedResumeId.fileSize,
+        isDefault: user.selectedResumeId.isDefault
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get selected resume error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
   }
 };

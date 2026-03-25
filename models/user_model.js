@@ -236,6 +236,13 @@ const UserSchema = new mongoose.Schema(
       }
     ],
 
+    // ✅ SELECTED RESUME - NEW FIELD ADDED
+    selectedResumeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Resume',
+      default: null
+    },
+
     // Notification Settings
     notificationSettings: {
       emailNotifications: { type: Boolean, default: true },
@@ -305,6 +312,7 @@ UserSchema.index({ role: 1, status: 1 });
 UserSchema.index({ 'employerProfile.stats.activeEmployees': 1 });
 UserSchema.index({ 'employerProfile.protection.isActive': 1, 'employerProfile.protection.expiryDate': 1 });
 UserSchema.index({ createdAt: -1 });
+UserSchema.index({ selectedResumeId: 1 }); // ✅ Add index for selected resume
 
 /* ===========================
   MIDDLEWARE

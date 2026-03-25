@@ -1,7 +1,7 @@
   const JobPost = require('../models/jobpost');
   const User = require('../models/user_model');
   const JobApplication = require('../models/JobApplication');
-  const { sendToUser } = require('../services/onesignal'); // ✅ Top pe add karo
+  const { sendToUser } = require('../services/onesignal'); 
   const mongoose = require('mongoose');
 
 
@@ -145,7 +145,6 @@
       res.status(500).json({ success: false, message: 'Server error' });
     }
   };
-  // ==================== GET EMPLOYER APPLICATIONS ====================
   exports.getEmployerApplications = async (req, res) => {
     try {
       const employerId = req.user.id;
