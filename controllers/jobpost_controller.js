@@ -95,68 +95,104 @@ exports.createJobPost = async (req, res) => {
 };
 exports.getAllJobPosts = async (req, res) => {
   try {
-    // ✅ Auth required - user一定会存在
     const userId = req.user.id;
     const user = await User.findById(userId);
-    
+
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Get all jobs
-    const jobPosts = await JobPost.find().sort({ postedDate: -1 });
+    // ==================== PAGINATION ====================
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    // Agar employee hai to filter karo
+    // ==================== SUBCATEGORY FILTER ====================
+    // URL example: /jobs?subcategories=Design,Marketing  OR  ?subcategories=Design
+    const subcategoriesParam = req.query.subcategories;
+    const subcategoryFilter = {};
+
+    if (subcategoriesParam && subcategoriesParam.trim() !== '') {
+      // Split by comma, decode each, trim whitespace
+      const subcategoriesArray = subcategoriesParam
+        .split(',')
+        .map(s => decodeURIComponent(s.trim()))
+        .filter(s => s !== '');
+
+      if (subcategoriesArray.length > 0) {
+        // $in means: job's subcategories array must contain at least one of these
+        subcategoryFilter.subcategories = { $in: subcategoriesArray };
+      }
+    }
+
+    // ==================== BUILD QUERY ====================
+    const baseQuery = { ...subcategoryFilter };
+
+    // Employee: also exclude hired jobs
     if (user.role === 'employee') {
-      // ✅ Get all jobs where employee is currently hired (active)
       const hiredApplications = await JobApplication.find({
         employeeId: userId,
         status: 'hired',
-        employmentStatus: 'active'
+        employmentStatus: 'active',
       });
 
-      // ✅ Get hired job IDs
-      const hiredJobIds = hiredApplications.map(app => app.jobId.toString());
+      const hiredJobIds = hiredApplications.map(app => app.jobId);
 
-      // ✅ Filter out hired jobs
-      const filteredJobs = jobPosts.filter(job => 
-        !hiredJobIds.includes(job._id.toString())
-      );
+      if (hiredJobIds.length > 0) {
+        baseQuery._id = { $nin: hiredJobIds };
+      }
+
+      const totalCount = await JobPost.countDocuments(baseQuery);
+      const totalPages = Math.ceil(totalCount / limit);
+
+      const jobPosts = await JobPost.find(baseQuery)
+        .sort({ postedDate: -1 })
+        .skip(skip)
+        .limit(limit);
 
       return res.status(200).json({
         success: true,
-        count: filteredJobs.length,
-        jobs: filteredJobs,
-        role: 'employee'
-      });
-    }
-    
-    // Agar employer hai to saari jobs dikhao
-    if (user.role === 'employer') {
-      return res.status(200).json({
-        success: true,
+        role: 'employee',
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalCount,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
         count: jobPosts.length,
         jobs: jobPosts,
-        role: 'employer'
       });
     }
 
-    // Fallback
+    // Employer or fallback: all jobs (with pagination + optional filter)
+    const totalCount = await JobPost.countDocuments(baseQuery);
+    const totalPages = Math.ceil(totalCount / limit);
+
+    const jobPosts = await JobPost.find(baseQuery)
+      .sort({ postedDate: -1 })
+      .skip(skip)
+      .limit(limit);
+
     return res.status(200).json({
       success: true,
+      role: user.role,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
       count: jobPosts.length,
-      jobs: jobPosts
+      jobs: jobPosts,
     });
 
   } catch (error) {
     console.error('Error fetching job posts:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Server error. Please try again later.' 
-    });
+    return res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
   }
 };
 

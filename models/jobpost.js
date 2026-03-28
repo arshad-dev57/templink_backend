@@ -52,7 +52,7 @@ const jobPostSchema = new mongoose.Schema({
   about: { type: String, required: true },
   requirements: { type: String, required: true },
   qualifications: { type: String, required: true },
-  subcategories: { type: [String], default: [] }, // ✅ Added subcategories field
+  subcategories: { type: [String], default: [] },
   images: [{ type: String }],
   protection: {
     isActive: {
