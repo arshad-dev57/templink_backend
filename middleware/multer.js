@@ -1,34 +1,30 @@
-// middleware/multer.js
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('../config/cloudinary'); // <- Yeh v2 export kar raha hai
+const cloudinary = require('../config/cloudinary');
 
-// Cloudinary storage configuration
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,  // <- Ab yeh sahi kaam karega
+  cloudinary: cloudinary,
   params: async (req, file) => {
-    // File type check
-    const allowedFormats = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
-    const fileExtension = file.mimetype.split('/')[1];
+    const ext = file.originalname.split('.').pop().toLowerCase();
+    let resourceType = 'image';
     
-    if (!allowedFormats.includes(fileExtension)) {
-      throw new Error('Invalid file format');
+    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip', 'rar'].includes(ext)) {
+      resourceType = 'raw';
+    } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) {
+      resourceType = 'video';
     }
 
     return {
       folder: 'projects_media',
-      format: fileExtension, // Important: Format specify karo
-      public_id: `${Date.now()}-${file.originalname.split('.')[0]}`,
-      transformation: [{ width: 800, height: 800, crop: 'limit' }],
+      resource_type: resourceType, 
+      public_id: `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`,
     };
   },
 });
 
 const upload = multer({
   storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 module.exports = upload;

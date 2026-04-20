@@ -2,18 +2,19 @@ const { sendToUser } = require("../services/onesignal");
 
 exports.sendNotificationToUser = async (req, res) => {
   try {
-    const { userId, title, message, data } = req.body;
+const { userId, subscriptionId, title, message, data } = req.body; // ✅ subscriptionId add
 
     if (!userId || !message) {
       return res.status(400).json({ ok: false, msg: "userId and message required" });
     }
 
     const result = await sendToUser({
-      mongoUserId: userId,
-      title,
-      message,
-      data: data || {},
-    });
+  mongoUserId: userId,
+  subscriptionId: subscriptionId || null, 
+  title,
+  message,
+  data: data || {},
+});
 
     return res.json({ ok: true, result });
   } catch (err) {

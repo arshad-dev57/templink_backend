@@ -63,7 +63,7 @@ const ProposalSchema = new mongoose.Schema(
     // ✅ CLEAN STATUS SYSTEM
     status: {
       type: String,
-      enum: ["PENDING", "ACCEPTED", "REJECTED"],
+  enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN"], // ✅ WITHDRAWN add kiya
       default: "PENDING",
     },
     

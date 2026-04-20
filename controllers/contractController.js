@@ -1,3 +1,4 @@
+const { sendToUser } = require('../services/onesignal'); // ✅ Top pe add karo
 const Contract = require('../models/Contract');
 const Project = require('../models/project');
 
@@ -9,7 +10,7 @@ exports.getContract = async (req, res) => {
 
     const contract = await Contract.findById(contractId)
       .populate('employerId', 'firstName lastName email companyName employerProfile')
-      .populate('employeeId', 'firstName lastName email employeeProfile'); // 👈 employee
+      .populate('employeeId', 'firstName lastName email employeeProfile');
 
     if (!contract) {
       return res.status(404).json({
@@ -18,7 +19,6 @@ exports.getContract = async (req, res) => {
       });
     }
 
-    // Check if user is part of this contract
     if (contract.employerId._id.toString() !== userId && 
         contract.employeeId._id.toString() !== userId) {
       return res.status(403).json({
@@ -48,7 +48,9 @@ exports.employerSignContract = async (req, res) => {
     const { signature } = req.body;
     const employerId = req.user.id;
 
-    const contract = await Contract.findById(contractId);
+    const contract = await Contract.findById(contractId)
+      .populate('employerId', 'firstName lastName')
+      .populate('employeeId', 'firstName lastName');
 
     if (!contract) {
       return res.status(404).json({
@@ -57,15 +59,13 @@ exports.employerSignContract = async (req, res) => {
       });
     }
 
-    // Verify employer
-    if (contract.employerId.toString() !== employerId) {
+    if (contract.employerId._id.toString() !== employerId) {
       return res.status(403).json({
         success: false,
         message: 'Only employer can sign this contract'
       });
     }
 
-    // Check current status
     if (contract.status !== 'DRAFT') {
       return res.status(400).json({
         success: false,
@@ -73,7 +73,6 @@ exports.employerSignContract = async (req, res) => {
       });
     }
 
-    // Update employer signature
     contract.signatures.employer = {
       signed: true,
       signedAt: new Date(),
@@ -82,9 +81,29 @@ exports.employerSignContract = async (req, res) => {
       signature: signature
     };
 
-    // Update status - waiting for employee
     contract.status = 'PENDING_EMPLOYEE_SIGN';
     await contract.save();
+
+    // ✅ Employee ko notify karo — employer ne sign kar diya
+    try {
+      const employerName = `${contract.employerId.firstName} ${contract.employerId.lastName}`;
+      const project = await Project.findById(contract.projectId).select('title');
+
+      await sendToUser({
+        mongoUserId: contract.employeeId._id.toString(),
+        title: "Contract Needs Your Signature! ✍️",
+        message: `${employerName} signed the contract for "${project?.title || 'your project'}". Your signature is needed.`,
+        data: {
+          type: "contract_employer_signed",
+          screen: "contracts",
+          contractId: contract._id.toString(),
+          projectId: contract.projectId.toString(),
+        }
+      });
+      console.log(`✅ Signature needed notification sent to employee: ${contract.employeeId._id}`);
+    } catch (notifError) {
+      console.log("⚠️ Notification failed (non-fatal):", notifError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -108,7 +127,9 @@ exports.employeeSignContract = async (req, res) => {
     const { signature } = req.body;
     const employeeId = req.user.id;
 
-    const contract = await Contract.findById(contractId);
+    const contract = await Contract.findById(contractId)
+      .populate('employerId', 'firstName lastName')
+      .populate('employeeId', 'firstName lastName');
 
     if (!contract) {
       return res.status(404).json({
@@ -117,15 +138,13 @@ exports.employeeSignContract = async (req, res) => {
       });
     }
 
-    // Verify employee
-    if (contract.employeeId.toString() !== employeeId) {
+    if (contract.employeeId._id.toString() !== employeeId) {
       return res.status(403).json({
         success: false,
         message: 'Only assigned employee can sign this contract'
       });
     }
 
-    // Check current status
     if (contract.status !== 'PENDING_EMPLOYEE_SIGN') {
       return res.status(400).json({
         success: false,
@@ -133,7 +152,6 @@ exports.employeeSignContract = async (req, res) => {
       });
     }
 
-    // Check if employer already signed
     if (!contract.signatures.employer.signed) {
       return res.status(400).json({
         success: false,
@@ -141,7 +159,6 @@ exports.employeeSignContract = async (req, res) => {
       });
     }
 
-    // Update employee signature
     contract.signatures.employee = {
       signed: true,
       signedAt: new Date(),
@@ -150,19 +167,40 @@ exports.employeeSignContract = async (req, res) => {
       signature: signature
     };
 
-    // Both signed, contract becomes ACTIVE
     contract.status = 'ACTIVE';
     contract.signedAt = new Date();
 
-    // Update project
-    await Project.findByIdAndUpdate(contract.projectId, {
-      status: 'IN_PROGRESS',
-      'acceptedProposal.contractSigned': true,
-      'acceptedProposal.contractSignedAt': new Date(),
-      $set: { 'milestones.0.isLocked': false } // First milestone unlocked
-    });
+    const project = await Project.findByIdAndUpdate(
+      contract.projectId,
+      {
+        status: 'IN_PROGRESS',
+        'acceptedProposal.contractSigned': true,
+        'acceptedProposal.contractSignedAt': new Date(),
+        $set: { 'milestones.0.isLocked': false }
+      },
+      { new: true }
+    );
 
     await contract.save();
+
+    // ✅ Employer ko notify karo — dono ne sign kar diya, project active
+    try {
+      const employeeName = `${contract.employeeId.firstName} ${contract.employeeId.lastName}`;
+
+    await sendToUser({
+  mongoUserId: contract.employerId._id.toString(),
+  title: "Contract Active! 🚀",
+  message: `${employeeName} signed the contract for "${project?.title || 'your project'}". Pay the first milestone to get started!`,
+  data: {
+    type: "contract_active",
+    screen: "milestone_payment",
+    contractId: contract._id.toString(),
+    projectId: contract.projectId.toString(),
+  }
+});      console.log(`✅ Contract active notification sent to employer: ${contract.employerId._id}`);
+    } catch (notifError) {
+      console.log("⚠️ Notification failed (non-fatal):", notifError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -192,7 +230,6 @@ exports.getUserContracts = async (req, res) => {
     } else if (role === 'employee') {
       query.employeeId = userId;
     } else {
-      // Both roles
       query = {
         $or: [
           { employerId: userId },
@@ -243,7 +280,6 @@ exports.getContractByProject = async (req, res) => {
       });
     }
 
-    // Check authorization
     if (contract.employerId._id.toString() !== userId && 
         contract.employeeId._id.toString() !== userId) {
       return res.status(403).json({
@@ -286,7 +322,6 @@ exports.downloadContractPDF = async (req, res) => {
       });
     }
 
-    // Check authorization
     if (contract.employerId._id.toString() !== userId && 
         contract.employeeId._id.toString() !== userId) {
       return res.status(403).json({
@@ -295,7 +330,6 @@ exports.downloadContractPDF = async (req, res) => {
       });
     }
 
-    // For now, return contract data
     return res.status(200).json({
       success: true,
       message: 'PDF download endpoint - In production, this will return PDF file',

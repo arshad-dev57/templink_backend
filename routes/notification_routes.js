@@ -5,3 +5,4 @@ const { sendNotificationToUser } = require("../controllers/notificationControlle
 router.post("/send", sendNotificationToUser);
 
 module.exports = router;
+ 

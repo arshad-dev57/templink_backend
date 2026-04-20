@@ -1,13 +1,13 @@
   const Project = require('../models/project');
-  const User = require('../models/user_model'); // ⚠️ apna exact path set karna
-  const Contract = require('../models/Contract');  // 👈 YEH IMPORT MISSING THA
+  const User = require('../models/user_model'); 
+  const Contract = require('../models/Contract');  
 
   const mongoose = require("mongoose");
   // helper to build employer snapshot
   function buildEmployerSnapshot(user) {
     const ep = user.employerProfile || {};
     return {
-      userId: user._id,
+      userId: user._id, 
 
       firstName: user.firstName,
       lastName: user.lastName,

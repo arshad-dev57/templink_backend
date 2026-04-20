@@ -1,10 +1,9 @@
-// controllers/submissionController.js - WITH AUTO RELEASE AND AUTO COMPLETE
-
 const Submission = require('../models/Submission');
 const Project = require('../models/project');
 const Contract = require('../models/Contract');
 const { Wallet, WalletTransaction } = require('../models/Wallet');
 const mongoose = require('mongoose');
+const cloudinary = require('../config/cloudinary');
 
 // ==================== SUBMIT WORK ====================
 exports.submitWork = async (req, res) => {
@@ -14,7 +13,6 @@ exports.submitWork = async (req, res) => {
 
     console.log('📦 Submitting work:', { projectId, milestoneId, employeeId });
 
-    // 1. Verify contract exists
     const contract = await Contract.findOne({
       projectId,
       employeeId,
@@ -28,7 +26,6 @@ exports.submitWork = async (req, res) => {
       });
     }
 
-    // 2. Get project and milestone
     const project = await Project.findById(projectId);
     if (!project) {
       return res.status(404).json({
@@ -45,7 +42,6 @@ exports.submitWork = async (req, res) => {
       });
     }
 
-    // 3. Verify milestone is FUNDED
     if (milestone.status !== 'FUNDED') {
       return res.status(400).json({
         success: false,
@@ -53,7 +49,6 @@ exports.submitWork = async (req, res) => {
       });
     }
 
-    // 4. Check if already submitted
     const existingSubmission = await Submission.findOne({
       projectId,
       milestoneId,
@@ -68,7 +63,6 @@ exports.submitWork = async (req, res) => {
       });
     }
 
-    // 5. Process attachments
     const attachments = (req.files || []).map(file => ({
       fileName: file.originalname,
       fileUrl: file.path,
@@ -77,7 +71,6 @@ exports.submitWork = async (req, res) => {
       uploadedAt: new Date()
     }));
 
-    // 6. Create submission record
     const submission = await Submission.create({
       projectId,
       milestoneId,
@@ -91,7 +84,6 @@ exports.submitWork = async (req, res) => {
       submittedAt: new Date()
     });
 
-    // 7. Update milestone status
     milestone.status = 'SUBMITTED';
     milestone.submittedAt = new Date();
     await project.save();
@@ -121,7 +113,6 @@ exports.getSubmissionByMilestone = async (req, res) => {
 
     console.log(`🔍 Fetching submission for project: ${projectId}, milestone: ${milestoneId}`);
 
-    // Verify project ownership
     const project = await Project.findById(projectId);
     if (!project) {
       return res.status(404).json({
@@ -137,7 +128,6 @@ exports.getSubmissionByMilestone = async (req, res) => {
       });
     }
 
-    // Find submission
     const submission = await Submission.findOne({
       projectId,
       milestoneId,
@@ -191,7 +181,7 @@ exports.getSubmissionStatus = async (req, res) => {
   }
 };
 
-// ==================== APPROVE SUBMISSION WITH AUTO RELEASE AND AUTO COMPLETE ====================
+// ==================== APPROVE SUBMISSION ====================
 exports.approveSubmission = async (req, res) => {
   try {
     const { submissionId } = req.params;
@@ -200,7 +190,6 @@ exports.approveSubmission = async (req, res) => {
 
     console.log(`✅ Approving submission: ${submissionId}`);
 
-    // 1. Find submission
     const submission = await Submission.findById(submissionId);
     if (!submission) {
       return res.status(404).json({
@@ -209,7 +198,6 @@ exports.approveSubmission = async (req, res) => {
       });
     }
 
-    // 2. Verify project ownership
     const project = await Project.findById(submission.projectId);
     if (!project) {
       return res.status(404).json({
@@ -225,7 +213,6 @@ exports.approveSubmission = async (req, res) => {
       });
     }
 
-    // 3. Get milestone
     const milestone = project.milestones.id(submission.milestoneId);
     if (!milestone) {
       return res.status(404).json({
@@ -234,34 +221,28 @@ exports.approveSubmission = async (req, res) => {
       });
     }
 
-    // 4. Update submission to APPROVED
     submission.status = 'APPROVED';
     submission.employerFeedback = feedback;
     submission.reviewedAt = new Date();
     await submission.save();
 
-    // 5. AUTO-RELEASE PAYMENT - Update milestone to RELEASED
     milestone.status = 'RELEASED';
     milestone.releasedAt = new Date();
-    
-    // 6. Add money to employee's wallet
+
     let employeeWallet = await Wallet.findOne({ userId: submission.employeeId });
-    
+
     if (!employeeWallet) {
-      // Create wallet if doesn't exist
       employeeWallet = await Wallet.create({
         userId: submission.employeeId,
         balance: 0
       });
     }
 
-    // Update wallet balance
     const newBalance = employeeWallet.balance + milestone.amount;
     employeeWallet.balance = newBalance;
     employeeWallet.lastTransactionAt = new Date();
     await employeeWallet.save();
 
-    // 7. Create wallet transaction record
     await WalletTransaction.create({
       userId: submission.employeeId,
       type: 'CREDIT',
@@ -278,10 +259,8 @@ exports.approveSubmission = async (req, res) => {
       }
     });
 
-    // 8. Update project total paid
     project.totalPaid = (project.totalPaid || 0) + milestone.amount;
-    
-    // Update payment summary
+
     if (!project.paymentSummary) {
       project.paymentSummary = {};
     }
@@ -291,14 +270,12 @@ exports.approveSubmission = async (req, res) => {
       pendingAmount: Math.max(0, project.maxBudget - project.totalPaid),
       lastPaymentAt: new Date()
     };
-    
+
     await project.save();
 
     console.log('✅ Work approved and payment released automatically');
     console.log(`💰 Amount ${milestone.amount} credited to employee wallet`);
-    console.log(`💳 Employee new balance: ${newBalance}`);
 
-    // 🔥 CHECK AND AUTO-COMPLETE PROJECT IF ALL MILESTONES ARE RELEASED
     const allMilestonesReleased = project.milestones.every(
       m => m.status === 'RELEASED'
     );
@@ -306,8 +283,6 @@ exports.approveSubmission = async (req, res) => {
     let projectCompleted = false;
     if (allMilestonesReleased) {
       console.log('🎯 All milestones released! Triggering auto-complete...');
-      
-      // Call the auto-complete function from projectController
       const projectController = require('./projectController');
       await projectController.checkAndAutoCompleteProject(project._id);
       projectCompleted = true;
@@ -315,7 +290,7 @@ exports.approveSubmission = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: projectCompleted 
+      message: projectCompleted
         ? 'Work approved, payment released, and project completed automatically!'
         : 'Work approved and payment released successfully',
       submission,
@@ -345,7 +320,6 @@ exports.requestRevision = async (req, res) => {
 
     console.log(`🔄 Requesting revision for submission: ${submissionId}`);
 
-    // 1. Find submission
     const submission = await Submission.findById(submissionId);
     if (!submission) {
       return res.status(404).json({
@@ -354,7 +328,6 @@ exports.requestRevision = async (req, res) => {
       });
     }
 
-    // 2. Verify project ownership
     const project = await Project.findById(submission.projectId);
     if (!project) {
       return res.status(404).json({
@@ -370,16 +343,14 @@ exports.requestRevision = async (req, res) => {
       });
     }
 
-    // 3. Update submission
     submission.status = 'REVISION_REQUESTED';
     submission.employerFeedback = feedback;
     submission.reviewedAt = new Date();
     await submission.save();
 
-    // 4. Update milestone back to FUNDED for resubmission
     const milestone = project.milestones.id(submission.milestoneId);
     if (milestone) {
-      milestone.status = 'FUNDED'; // Go back to FUNDED
+      milestone.status = 'FUNDED';
       await project.save();
     }
 
@@ -406,7 +377,6 @@ exports.getProjectSubmissions = async (req, res) => {
     const { projectId } = req.params;
     const employerId = req.user.id;
 
-    // Verify project ownership
     const project = await Project.findById(projectId);
     if (!project) {
       return res.status(404).json({
@@ -437,5 +407,97 @@ exports.getProjectSubmissions = async (req, res) => {
       success: false,
       message: error.message || 'Server error'
     });
+  }
+};exports.downloadFile = async (req, res) => {
+  try {
+    const { fileUrl } = req.body;
+    if (!fileUrl) return res.status(400).json({ message: 'fileUrl is required' });
+
+    const urlParts = fileUrl.split('/upload/');
+    const afterUpload = urlParts[1];
+    const withoutVersion = afterUpload.replace(/^v\d+\//, '');
+    const fileName = withoutVersion.split('/').pop();
+    const extension = fileName.split('.').pop().toLowerCase();
+    const publicId = withoutVersion.replace(/\.[^/.]+$/, '');
+
+    console.log('📋 Downloading via Admin API, public_id:', publicId);
+
+    // ✅ Cloudinary Admin API se binary data fetch karo
+    const result = await cloudinary.api.resource(publicId, {
+      resource_type: 'image',
+    });
+
+    // ✅ Signed delivery URL banao — expiry ke saath
+    const timestamp = Math.round(Date.now() / 1000) + 3600;
+    
+    const signedUrl = cloudinary.url(publicId, {
+      resource_type: 'image',
+      type: 'upload',
+      sign_url: true,
+      secure: true,
+      expires_at: timestamp,
+    });
+
+    console.log('🔗 Final URL:', signedUrl);
+
+    // ✅ Node https module se download karo — axios nahi
+    const https = require('https');
+    
+    const mimeTypes = {
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+
+    res.setHeader('Content-Type', mimeTypes[extension] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    https.get(signedUrl, (fileResponse) => {
+      console.log('📥 Cloudinary response status:', fileResponse.statusCode);
+      
+      if (fileResponse.statusCode === 401 || fileResponse.statusCode === 403) {
+        console.log('❌ Still unauthorized — trying direct URL with API auth');
+        
+        // ✅ Last resort — API key/secret se Basic Auth
+        const options = {
+          hostname: 'api.cloudinary.com',
+          path: `/v1_1/duzawmkrm/resources/image/upload/${encodeURIComponent(publicId)}`,
+          auth: `726579868821175:rD3RmMwrB0f2OjcEp1v6cXR7syk`,
+        };
+        
+        https.get(options, (r) => {
+          r.pipe(res);
+        }).on('error', (e) => {
+          if (!res.headersSent) res.status(500).json({ message: e.message });
+        });
+        return;
+      }
+      
+      if (fileResponse.statusCode !== 200) {
+        if (!res.headersSent) res.status(fileResponse.statusCode).json({ 
+          message: `Cloudinary returned ${fileResponse.statusCode}` 
+        });
+        return;
+      }
+      
+      if (fileResponse.headers['content-length']) {
+        res.setHeader('Content-Length', fileResponse.headers['content-length']);
+      }
+      
+      fileResponse.pipe(res);
+      fileResponse.on('end', () => console.log('✅ File sent successfully'));
+    }).on('error', (err) => {
+      console.error('❌ HTTPS error:', err);
+      if (!res.headersSent) res.status(500).json({ message: err.message });
+    });
+
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    if (!res.headersSent) res.status(500).json({ message: error.message });
   }
 };

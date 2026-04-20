@@ -17,10 +17,8 @@ exports.getAllTalents = async (req, res) => {
       employeeProfile: 1,
       createdAt: 1
     })
-    .sort({ createdAt: -1 }) // Newest first
+    .sort({ createdAt: -1 })
     .lean();
-
-    // ✅ Simple response - direct array
     return res.status(200).json({
       success: true,
       count: talents.length,
@@ -36,10 +34,6 @@ exports.getAllTalents = async (req, res) => {
   }
 };
 
-/**
- * ✅ GET SINGLE TALENT BY ID
- * GET /api/talent/:id
- */
 exports.getTalentById = async (req, res) => {
   try {
     const { id } = req.params;
