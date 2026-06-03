@@ -1,3 +1,5 @@
+// models/JobPost.js
+
 const mongoose = require('mongoose');
 
 const EmployerSnapshotSchema = new mongoose.Schema(
@@ -39,7 +41,7 @@ const EmployerSnapshotSchema = new mongoose.Schema(
 
 const jobPostSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  company: { type: String,  },
+  company: { type: String },
   workplace: { type: String, enum: ['Onsite', 'Hybrid', 'Remote'], required: true },
   location: { type: String, required: true },
   type: {
@@ -50,8 +52,9 @@ const jobPostSchema = new mongoose.Schema({
   about: { type: String, required: true },
   requirements: { type: String, required: true },
   qualifications: { type: String, required: true },
+  subcategories: { type: [String], default: [] },
   images: [{ type: String }],
- protection: {
+  protection: {
     isActive: {
       type: Boolean,
       default: false
@@ -76,6 +79,7 @@ const jobPostSchema = new mongoose.Schema({
     commissionPaid: Number,
     protectionUsed: Boolean
   }],
+  
   // ✅ Reference
   postedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 

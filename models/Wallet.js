@@ -22,14 +22,14 @@ const WalletTransactionSchema = new mongoose.Schema({
   },
   balance: {
     type: Number,
-    required: true // Balance after transaction
+    required: true 
   },
   description: {
     type: String,
     required: true
   },
   reference: {
-    type: String, // Payment intent ID, project ID, etc.
+    type: String, 
   },
   metadata: {
     type: mongoose.Schema.Types.Mixed,

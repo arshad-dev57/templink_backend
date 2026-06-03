@@ -1,10 +1,12 @@
+// controllers/employerProfileController.js
+
 const Project = require("../models/project");
 const User = require("../models/user_model");
 const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
 const mongoose = require("mongoose");
 
-// ==================== GET EMPLOYER PROFILE WITH TEAM MEMBERS ====================
+// ==================== GET EMPLOYER PROFILE ====================
 exports.getEmployerProfile = async (req, res) => {
   try {
     console.log("\n🟡 ===== GET EMPLOYER PROFILE STARTED =====");
@@ -38,6 +40,13 @@ exports.getEmployerProfile = async (req, res) => {
         success: false, 
         message: "Access denied. User is not an employer." 
       });
+    }
+
+    // ✅ FIX: Initialize employerProfile if it doesn't exist
+    if (!user.employerProfile) {
+      user.employerProfile = {};
+      await user.save();
+      console.log("✅ Initialized empty employerProfile");
     }
 
     console.log("✅ Employer profile fetched successfully");
@@ -120,13 +129,27 @@ exports.getEmployerProfile = async (req, res) => {
       country: user.country,
       pointsBalance: user.pointsBalance,
       employerProfile: {
-        ...user.employerProfile,
-        // Override team members with processed data
-        teamMembers: activeMembers, // Send only active members in main team list
+        companyName: user.employerProfile?.companyName || '',
+        industry: user.employerProfile?.industry || '',
+        city: user.employerProfile?.city || '',
+        country: user.employerProfile?.country || '',
+        companySize: user.employerProfile?.companySize || '',
+        logoUrl: user.employerProfile?.logoUrl || '',
+        about: user.employerProfile?.about || '',
+        mission: user.employerProfile?.mission || '',
+        cultureTags: user.employerProfile?.cultureTags || [],
+        phone: user.employerProfile?.phone || '',
+        companyEmail: user.employerProfile?.companyEmail || '',
+        website: user.employerProfile?.website || '',
+        linkedin: user.employerProfile?.linkedin || '',
+        workModel: user.employerProfile?.workModel || '',
+        isVerifiedEmployer: user.employerProfile?.isVerifiedEmployer || false,
+        rating: user.employerProfile?.rating || 0,
+        teamMembers: activeMembers,
         pastMembers: pastMembers,
         stats: {
-          totalHires: user.employerProfile?.totalHires || 0,
-          activeEmployees: user.employerProfile?.activeEmployees || 0,
+          totalHires: user.employerProfile?.stats?.totalHires || 0,
+          activeEmployees: user.employerProfile?.stats?.activeEmployees || 0,
           pastEmployees: pastMembers.length
         }
       },
@@ -243,7 +266,8 @@ exports.getTeamMembers = async (req, res) => {
     });
   }
 };
-// ==================== UPDATE EMPLOYER PROFILE ====================
+
+// ==================== UPDATE EMPLOYER PROFILE (FIXED) ====================
 exports.updateEmployerProfile = async (req, res) => {
   try {
     console.log("\n🟡 ===== UPDATE EMPLOYER PROFILE STARTED =====");
@@ -251,6 +275,7 @@ exports.updateEmployerProfile = async (req, res) => {
     const employerId = req.user.id;
     console.log("👤 Employer ID:", employerId);
 
+    // First check if user exists
     const user = await User.findById(employerId);
     
     if (!user) {
@@ -267,6 +292,11 @@ exports.updateEmployerProfile = async (req, res) => {
         success: false, 
         message: "Access denied. User is not an employer." 
       });
+    }
+
+    // ✅ FIX: Initialize employerProfile if it doesn't exist
+    if (!user.employerProfile) {
+      user.employerProfile = {};
     }
 
     // Get data from request body
@@ -292,40 +322,66 @@ exports.updateEmployerProfile = async (req, res) => {
 
     console.log("📦 Updating employer fields");
 
-    // Update employer profile
-    const updateData = {};
-
-    if (companyName !== undefined) updateData['employerProfile.companyName'] = companyName;
-    if (industry !== undefined) updateData['employerProfile.industry'] = industry;
-    if (city !== undefined) updateData['employerProfile.city'] = city;
-    if (country !== undefined) updateData['employerProfile.country'] = country;
-    if (companySize !== undefined) updateData['employerProfile.companySize'] = companySize;
-    if (logoUrl !== undefined) updateData['employerProfile.logoUrl'] = logoUrl;
-    if (about !== undefined) updateData['employerProfile.about'] = about;
-    if (mission !== undefined) updateData['employerProfile.mission'] = mission;
-    if (workModel !== undefined) updateData['employerProfile.workModel'] = workModel;
-    if (phone !== undefined) updateData['employerProfile.phone'] = phone;
-    if (companyEmail !== undefined) updateData['employerProfile.companyEmail'] = companyEmail;
-    if (website !== undefined) updateData['employerProfile.website'] = website;
-    if (linkedin !== undefined) updateData['employerProfile.linkedin'] = linkedin;
-    if (isVerifiedEmployer !== undefined) updateData['employerProfile.isVerifiedEmployer'] = isVerifiedEmployer;
-    if (rating !== undefined) updateData['employerProfile.rating'] = rating;
+    // ✅ FIX: Build update object properly
+    const updateFields = {};
+    
+    // Add all fields that are provided
+    if (companyName !== undefined) updateFields['employerProfile.companyName'] = companyName;
+    if (industry !== undefined) updateFields['employerProfile.industry'] = industry;
+    if (city !== undefined) updateFields['employerProfile.city'] = city;
+    if (country !== undefined) updateFields['employerProfile.country'] = country;
+    if (companySize !== undefined) updateFields['employerProfile.companySize'] = companySize;
+    if (logoUrl !== undefined) updateFields['employerProfile.logoUrl'] = logoUrl;
+    if (about !== undefined) updateFields['employerProfile.about'] = about;
+    if (mission !== undefined) updateFields['employerProfile.mission'] = mission;
+    if (workModel !== undefined) updateFields['employerProfile.workModel'] = workModel;
+    if (phone !== undefined) updateFields['employerProfile.phone'] = phone;
+    if (companyEmail !== undefined) updateFields['employerProfile.companyEmail'] = companyEmail;
+    if (website !== undefined) updateFields['employerProfile.website'] = website;
+    if (linkedin !== undefined) updateFields['employerProfile.linkedin'] = linkedin;
+    if (isVerifiedEmployer !== undefined) updateFields['employerProfile.isVerifiedEmployer'] = isVerifiedEmployer;
+    if (rating !== undefined) updateFields['employerProfile.rating'] = rating;
     
     // Handle arrays
     if (cultureTags !== undefined) {
-      updateData['employerProfile.cultureTags'] = Array.isArray(cultureTags) ? cultureTags : JSON.parse(cultureTags);
+      const tags = Array.isArray(cultureTags) ? cultureTags : JSON.parse(cultureTags);
+      updateFields['employerProfile.cultureTags'] = tags;
     }
     
     if (teamMembers !== undefined) {
-      updateData['employerProfile.teamMembers'] = Array.isArray(teamMembers) ? teamMembers : JSON.parse(teamMembers);
+      const members = Array.isArray(teamMembers) ? teamMembers : JSON.parse(teamMembers);
+      updateFields['employerProfile.teamMembers'] = members;
     }
 
-    // Update user
+    // ✅ FIX: Check if there are fields to update
+    if (Object.keys(updateFields).length === 0) {
+      console.log("⚠️ No fields to update");
+      return res.status(400).json({
+        success: false,
+        message: "No fields to update"
+      });
+    }
+
+    console.log("📦 Update fields:", Object.keys(updateFields));
+
+    // ✅ FIX: Update using findByIdAndUpdate with proper options
     const updatedUser = await User.findByIdAndUpdate(
       employerId,
-      { $set: updateData },
-      { new: true, runValidators: true }
+      { $set: updateFields },
+      { 
+        new: true, 
+        runValidators: false,
+        upsert: false
+      }
     ).select('-passwordHash');
+
+    if (!updatedUser) {
+      console.log("❌ Update failed - user not found");
+      return res.status(404).json({
+        success: false,
+        message: "User not found during update"
+      });
+    }
 
     console.log("✅ Profile updated successfully");
 
@@ -373,6 +429,13 @@ exports.uploadCompanyLogo = async (req, res) => {
       path: req.file.path,
       size: req.file.size
     });
+
+    // ✅ FIX: Ensure employerProfile exists before updating
+    const user = await User.findById(employerId);
+    if (!user.employerProfile) {
+      user.employerProfile = {};
+      await user.save();
+    }
 
     // Update user with logo URL
     const updatedUser = await User.findByIdAndUpdate(
@@ -425,6 +488,11 @@ exports.addTeamMember = async (req, res) => {
       });
     }
 
+    // ✅ FIX: Initialize employerProfile if not exists
+    if (!user.employerProfile) {
+      user.employerProfile = {};
+    }
+
     // Initialize teamMembers if not exists
     if (!user.employerProfile.teamMembers) {
       user.employerProfile.teamMembers = [];
@@ -475,6 +543,11 @@ exports.removeTeamMember = async (req, res) => {
         success: false, 
         message: "User not found" 
       });
+    }
+
+    // ✅ FIX: Initialize employerProfile if not exists
+    if (!user.employerProfile) {
+      user.employerProfile = {};
     }
 
     // Remove team member by index

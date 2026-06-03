@@ -3,19 +3,13 @@ const router = express.Router();
 const auth = require('../middleware/auth_middleware');
 const coinPurchaseController = require('../controllers/coinPurchaseController');
 
-// All routes require authentication
 router.use(auth);
-
-// Get available coin packages
 router.get('/packages', coinPurchaseController.getCoinPackages);
-
-// Create payment intent for coins
-router.post('/create-payment', coinPurchaseController.createCoinPaymentIntent);
-
-// Verify payment and add coins
-router.post('/verify-payment', coinPurchaseController.verifyCoinPayment);
-
-// Get current coin balance
+router.post('/create-checkout-session', coinPurchaseController.createCheckoutSession);
+router.post('/verify-payment', coinPurchaseController.verifyPayment);
 router.get('/balance', coinPurchaseController.getCoinBalance);
+
+// Webhook endpoint (no auth required)
+router.post('/webhook', express.raw({type: 'application/json'}), coinPurchaseController.handleStripeWebhook);
 
 module.exports = router;

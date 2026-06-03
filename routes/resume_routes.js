@@ -6,6 +6,8 @@ const {
   getUserResumes,
   deleteResume,
   setDefaultResume,
+  selectResume,
+  getSelectedResume
 } = require('../controllers/resume_controller');
 
 // Add a console.log to debug
@@ -23,6 +25,8 @@ router.post('/', upload.single('resume'), uploadResume);
 router.get('/', getUserResumes);
 
 router.delete('/:id', deleteResume);
+router.patch('/select/:resumeId', auth, selectResume);
+router.get('/selected', auth,getSelectedResume);
 
 // PATCH /api/resumes/:id/default – set as default
 router.patch('/:id/default', setDefaultResume);

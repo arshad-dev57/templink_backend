@@ -1,10 +1,21 @@
 // controllers/talent_controller.js
 
 const User = require('../models/user_model');
-
+// In your talent controller file
 exports.getAllTalents = async (req, res) => {
   try {
-    // ✅ Sirf active employees
+    // ✅ Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 6;
+    const skip = (page - 1) * limit;
+
+    // ✅ Get total count for pagination
+    const totalTalents = await User.countDocuments({
+      role: 'employee',
+      status: 'active'
+    });
+
+    // ✅ Get talents with pagination
     const talents = await User.find({
       role: 'employee',
       status: 'active'
@@ -18,10 +29,25 @@ exports.getAllTalents = async (req, res) => {
       createdAt: 1
     })
     .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
     .lean();
+
+    // ✅ Calculate pagination metadata
+    const totalPages = Math.ceil(totalTalents / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
     return res.status(200).json({
       success: true,
-      count: talents.length,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalItems: totalTalents,
+        itemsPerPage: limit,
+        hasNextPage: hasNextPage,
+        hasPrevPage: hasPrevPage
+      },
       talents: talents
     });
 

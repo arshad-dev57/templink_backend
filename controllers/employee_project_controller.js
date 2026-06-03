@@ -15,7 +15,7 @@ exports.getMyActiveProjects = async (req, res) => {
     const projects = await Promise.all(contracts.map(async (contract) => {
       const project = await Project.findById(contract.projectId._id)
         .select('title description milestones status maxBudget employerSnapshot');
-      
+    
       if (!project) return null;
 
       const totalMilestones = project.milestones?.length || 0;

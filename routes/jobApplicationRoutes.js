@@ -5,10 +5,14 @@ const upload = require('../middleware/multer');
 const { 
   applyForJob,
   getEmployerApplications,
-  getEmployeeApplications
+  getEmployeeApplications,
+  getHiredEmployees
+  
 } = require('../controllers/job_Application_Controller');
 router.post('/apply/:jobId', auth, upload.single('resume'), applyForJob);
 router.get('/employer', auth, getEmployerApplications);
 router.get('/my', auth, getEmployeeApplications);
+router.get('/employer/hired', auth, getHiredEmployees);
+
 
 module.exports = router;
