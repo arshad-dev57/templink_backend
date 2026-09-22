@@ -1,5 +1,5 @@
 // services/notificationService.js
-const { sendToUser } = require("../Services/onesignal");
+const { sendToUser } = require("../services/onesignal");
 const User = require("../models/user_model");
 
 async function sendNotification(userId, title, message, data = {}) {
