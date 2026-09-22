@@ -2,6 +2,7 @@ const User = require('../models/user_model');
 const Payment = require('../models/Payment'); // Your existing Payment model
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const { sendNotification } = require('../controllers/notificationController');
 
 // Coin packages configuration - prices in cents (USD)
 const COIN_PACKAGES = [
@@ -27,6 +28,7 @@ exports.getCoinPackages = async (req, res) => {
     });
   }
 };
+
 // Create Stripe Checkout Session
 exports.createCheckoutSession = async (req, res) => {
   try {
@@ -104,6 +106,7 @@ exports.createCheckoutSession = async (req, res) => {
     });
   }
 };
+
 exports.verifyPayment = async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -249,6 +252,21 @@ exports.verifyPayment = async (req, res) => {
     console.log(`   ├─ Amount: $${amountInCents/100}`);
     console.log(`   ├─ Status: ${paymentRecord.status}`);
     console.log(`   └─ Created At: ${paymentRecord.createdAt}`);
+
+    // 🔔 SEND NOTIFICATION - Coins added successfully
+    await sendNotification(
+      userId,
+      "💰 Coins Purchased Successfully!",
+      `You purchased ${coinsToAdd} coins. New balance: ${newBalance} coins`,
+      {
+        type: "coins_purchased",
+        packageName: selectedPackage.name,
+        coinsAdded: coinsToAdd,
+        newBalance: newBalance,
+        amount: amountInCents / 100,
+        paymentId: paymentRecord._id.toString()
+      }
+    );
 
     console.log(`\n🎉 [DEBUG] ========== PAYMENT VERIFIED SUCCESSFULLY ==========`);
     console.log(`📊 [SUMMARY]`);
@@ -507,6 +525,22 @@ exports.handleStripeWebhook = async (req, res) => {
       console.log(`   ├─ Payment Intent: ${paymentIntentId}`);
       console.log(`   └─ Status: ${paymentRecord.status}`);
 
+      // 🔔 SEND NOTIFICATION - Coins added via webhook
+      await sendNotification(
+        userId,
+        "💰 Coins Added Successfully!",
+        `You purchased ${coinsToAdd} coins. New balance: ${newBalance} coins`,
+        {
+          type: "coins_purchased",
+          packageName: selectedPackage.name,
+          coinsAdded: coinsToAdd,
+          newBalance: newBalance,
+          amount: amountInCents / 100,
+          paymentId: paymentRecord._id.toString(),
+          via: "webhook"
+        }
+      );
+
       console.log(`\n🎉 [DEBUG] ========== WEBHOOK PROCESSED SUCCESSFULLY ==========`);
       console.log(`📊 [SUMMARY]`);
       console.log(`   ├─ User: ${user.fullName || user.email}`);
@@ -514,7 +548,8 @@ exports.handleStripeWebhook = async (req, res) => {
       console.log(`   ├─ Coins Added: +${coinsToAdd}`);
       console.log(`   ├─ Balance Before: ${previousBalance}`);
       console.log(`   ├─ Balance After: ${newBalance}`);
-      console.log(`   └─ Amount Paid: $${amountInCents/100}\n`);
+      console.log(`   ├─ Amount Paid: $${amountInCents/100}`);
+      console.log(`   └─ Payment ID: ${paymentRecord._id}\n`);
 
     } catch (error) {
       console.error('❌ Webhook error updating user balance:', error);

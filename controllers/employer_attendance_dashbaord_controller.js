@@ -2,9 +2,8 @@
 const User = require('../models/user_model');
 const JobPost = require('../models/jobpost');
 const JobApplication = require('../models/JobApplication');
-
-
 const Attendance = require('../models/attendance_model');
+const { sendNotification } = require('./notificationController');
 
 // ==================== GET TODAY'S ATTENDANCE STATS ====================
 exports.getTodayAttendanceStats = async (req, res) => {
@@ -226,7 +225,7 @@ exports.getEmployeeAttendanceHistory = async (req, res) => {
 };
 
 // ==================== GET DASHBOARD STATS ====================
-exports. getDashboardStats = async (req, res) => {
+exports.getDashboardStats = async (req, res) => {
   try {
     const employerId = req.user.id;
 
@@ -297,7 +296,7 @@ exports. getDashboardStats = async (req, res) => {
         totalTeam: totalActiveTeam,
         activeTeam: totalActiveTeam,
         leftTeam: leftTeamCount,
-        totalTeamAll: teamMembers.length, // Optional: total including left
+        totalTeamAll: teamMembers.length,
         
         // Jobs stats
         totalJobs,
@@ -330,6 +329,7 @@ exports. getDashboardStats = async (req, res) => {
     });
   }
 };
+
 // ==================== GET OFFICE HOURS ====================
 exports.getOfficeHours = async (req, res) => {
   try {
@@ -367,7 +367,9 @@ exports.getOfficeHours = async (req, res) => {
       message: 'Server error'
     });
   }
-};// ==================== UPDATE OFFICE HOURS ====================
+};
+
+// ==================== UPDATE OFFICE HOURS ====================
 exports.updateOfficeHours = async (req, res) => {
   try {
     const employerId = req.user.id;
@@ -394,7 +396,15 @@ exports.updateOfficeHours = async (req, res) => {
       });
     }
 
-    // Directly update using findOneAndUpdate (bypasses any middleware issues)
+    // Get old office hours for notification
+    const oldEmployer = await User.findById(employerId);
+    const oldOfficeHours = oldEmployer?.employerProfile?.officeHours || {
+      checkIn: '09:00',
+      checkOut: '18:00',
+      gracePeriod: 10
+    };
+
+    // Directly update using findOneAndUpdate
     const updatedEmployer = await User.findOneAndUpdate(
       { _id: employerId, role: 'employer' },
       { 
@@ -407,7 +417,7 @@ exports.updateOfficeHours = async (req, res) => {
         } 
       },
       { 
-        new: true,  // Return updated document
+        new: true,
         runValidators: true 
       }
     );
@@ -419,9 +429,24 @@ exports.updateOfficeHours = async (req, res) => {
       });
     }
 
+    // 🔔 NOTIFICATION - Office hours updated
+    await sendNotification(
+      employerId,
+      "⏰ Office Hours Updated",
+      `Office hours changed from ${oldOfficeHours.checkIn} to ${checkIn} (Grace: ${gracePeriod || 10} min)`,
+      {
+        type: "office_hours_updated",
+        oldCheckIn: oldOfficeHours.checkIn,
+        newCheckIn: checkIn,
+        oldCheckOut: oldOfficeHours.checkOut,
+        newCheckOut: checkOut,
+        oldGracePeriod: oldOfficeHours.gracePeriod,
+        newGracePeriod: gracePeriod || 10
+      }
+    );
+
     console.log('✅ Updated employer in DB:', updatedEmployer.employerProfile?.officeHours);
 
-    // Return the updated office hours
     res.json({
       success: true,
       message: 'Office hours updated successfully',
@@ -440,6 +465,7 @@ exports.updateOfficeHours = async (req, res) => {
     });
   }
 };
+
 // ==================== CALCULATE LATE THRESHOLD ====================
 // Helper function to calculate late threshold based on check-in + grace period
 exports.calculateLateThreshold = (checkIn, gracePeriod) => {
@@ -478,8 +504,8 @@ exports.getAttendanceSettings = async (req, res) => {
       settings: {
         officeHours,
         lateThreshold,
-        timezone: 'UTC', // Can be extended based on employer's location
-        workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], // Default working days
+        timezone: 'UTC',
+        workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
         weekendDays: ['Saturday', 'Sunday']
       }
     });
@@ -517,7 +543,7 @@ exports.getTeamStats = async (req, res) => {
         totalTeam: activeTeamMembers.length,
         activeTeam: activeTeamMembers.length,
         leftTeam: teamMembers.filter(m => m.status === 'left' || m.status === 'terminated').length,
-        totalTeamAll: teamMembers.length // Optional
+        totalTeamAll: teamMembers.length
       }
     });
 

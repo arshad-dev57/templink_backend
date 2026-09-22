@@ -1,6 +1,7 @@
 const JobApplication = require('../models/JobApplication');
 const JobPost = require('../models/jobpost');
 const User = require('../models/user_model');
+const { sendNotification } = require('./notificationController');
 
 // ============== EMPLOYEE LEFT COMPANY ==============
 exports.employeeLeft = async (req, res) => {
@@ -13,7 +14,8 @@ exports.employeeLeft = async (req, res) => {
 
     // Get application with job details
     const application = await JobApplication.findById(applicationId)
-      .populate('jobId');
+      .populate('jobId')
+      .populate('employeeId', 'firstName lastName email');
 
     if (!application) {
       return res.status(404).json({
@@ -55,6 +57,8 @@ exports.employeeLeft = async (req, res) => {
     // Check if within 30 days for EMPLOYER LEVEL protection
     const within30Days = daysWorked <= 30;
 
+    let remainingHires = 0;
+
     if (within30Days) {
       // Get employer
       const employer = await User.findById(employerId);
@@ -81,6 +85,7 @@ exports.employeeLeft = async (req, res) => {
         
         employer.employerProfile.protection.remainingHires += 1;
         employer.employerProfile.protection.totalFreeHires += 1;
+        remainingHires = employer.employerProfile.protection.remainingHires;
       } else {
         // Naya protection
         employer.employerProfile.protection = {
@@ -93,6 +98,7 @@ exports.employeeLeft = async (req, res) => {
           reason: reason || 'Employee left within 30 days',
           activatedAt: now
         };
+        remainingHires = 1;
       }
 
       // Add to protection history
@@ -133,6 +139,22 @@ exports.employeeLeft = async (req, res) => {
 
       console.log('🛡️ EMPLOYER LEVEL protection activated until:', expiryDate);
       console.log('🛡️ Free hires available:', employer.employerProfile.protection.remainingHires);
+
+      // 🔔 NOTIFICATION TO EMPLOYER - Protection activated
+      await sendNotification(
+        employerId,
+        "🛡️ Protection Activated! Free Hire Available",
+        `Employee left within ${daysWorked} days. You now have ${remainingHires} free hire(s) for ANY job for the next 30 days.`,
+        {
+          type: "protection_activated",
+          employeeId: application.employeeId._id.toString(),
+          employeeName: `${application.employeeId.firstName} ${application.employeeId.lastName}`,
+          daysWorked: daysWorked,
+          remainingHires: remainingHires,
+          expiryDate: expiryDate,
+          reason: reason || 'Not specified'
+        }
+      );
     }
 
     await application.save();
@@ -174,19 +196,37 @@ exports.employeeLeft = async (req, res) => {
       }
     }
 
+    // 🔔 NOTIFICATION TO EMPLOYEE - Employment ended
+    const employerName = employer?.employerProfile?.companyName || employer?.firstName || 'Your employer';
+    await sendNotification(
+      application.employeeId._id,
+      "📋 Employment Update",
+      `${employerName} has ended your position. ${within30Days ? 'You worked for ' + daysWorked + ' days.' : ''}`,
+      {
+        type: "employment_ended",
+        employerId: employerId.toString(),
+        employerName: employerName,
+        jobId: application.jobId.toString(),
+        jobTitle: application.jobSnapshot?.title || 'Position',
+        daysWorked: daysWorked,
+        leftAt: now,
+        reason: reason || 'Not specified'
+      }
+    );
+
     // Get updated employer for response
     const updatedEmployer = await User.findById(employerId);
-    const remainingHires = updatedEmployer?.employerProfile?.protection?.remainingHires || 0;
+    const finalRemainingHires = updatedEmployer?.employerProfile?.protection?.remainingHires || 0;
 
     return res.status(200).json({
       success: true,
       message: within30Days 
-        ? `✅ Employee left within 30 days (${daysWorked} days worked). You now have ${remainingHires} free hire(s) for ALL jobs!`
+        ? `✅ Employee left within 30 days (${daysWorked} days worked). You now have ${finalRemainingHires} free hire(s) for ALL jobs!`
         : `Employee left after 30 days (${daysWorked} days worked). No protection applied.`,
       daysWorked: daysWorked,
       protectionActivated: within30Days,
       protectionExpiry: within30Days ? updatedEmployer.employerProfile.protection.expiryDate : null,
-      remainingHires: remainingHires
+      remainingHires: finalRemainingHires
     });
 
   } catch (error) {

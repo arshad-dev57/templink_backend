@@ -2,10 +2,11 @@
 const User = require('../models/user_model');
 const JobPost = require('../models/jobpost');
 const JobApplication = require('../models/JobApplication');
-
+const { sendNotification } = require('./notificationController');
 
 // controllers/employee_attendance_controller.js
 const Attendance = require('../models/attendance_model');
+
 // ==================== GET EMPLOYEE DASHBOARD DATA ====================
 exports.getEmployeeDashboard = async (req, res) => {
   try {
@@ -155,7 +156,6 @@ exports.getEmployeeDashboard = async (req, res) => {
 
     // ============ 4. GET UPCOMING DEADLINES ============
     const activeJobs = hiredApplications.filter(j => j.employmentStatus === 'active');
-    // You can add more logic here for deadlines if needed
 
     // ============ 5. GET EMPLOYEE PROFILE ============
     const employeeProfile = {
@@ -202,8 +202,8 @@ exports.getEmployeeDashboard = async (req, res) => {
         },
         recentActivity: activities,
         summary: {
-          totalEarnings: '$4,250', // You can calculate this from payroll
-          hoursWorked: 86, // You can calculate this from timesheet
+          totalEarnings: '$4,250',
+          hoursWorked: 86,
           upcomingDeadlines: activeJobs.length
         }
       }
@@ -324,9 +324,6 @@ exports.getEmployeeCompanies = async (req, res) => {
   }
 };
 
-
-
-
 // ==================== CHECK-IN ====================
 exports.checkIn = async (req, res) => {
   try {
@@ -369,11 +366,13 @@ exports.checkIn = async (req, res) => {
     let isLate = false;
     let lateMinutes = 0;
     let officeStartTime = '09:00';
+    let employerName = 'Your employer';
 
     if (activeEmployer) {
       const employer = await User.findById(activeEmployer.employerId);
       officeStartTime = employer.employerProfile?.officeHours?.checkIn || '09:00';
       const gracePeriod = employer.employerProfile?.officeHours?.gracePeriod || 10;
+      employerName = employer.employerProfile?.companyName || employer.firstName || 'Your employer';
       
       // Calculate if late
       const now = new Date();
@@ -414,6 +413,42 @@ exports.checkIn = async (req, res) => {
         lateMinutes: lateMinutes,
         officeStartTime: officeStartTime
       });
+    }
+
+    // 🔔 SEND NOTIFICATION - Check-in successful
+    let notificationMessage = isLate 
+      ? `You checked in late by ${lateMinutes} minutes. Office starts at ${officeStartTime}`
+      : `You checked in on time at ${new Date().toLocaleTimeString()}`;
+    
+    await sendNotification(
+      employeeId,
+      isLate ? "⏰ Late Check-in" : "✅ Check-in Successful",
+      notificationMessage,
+      {
+        type: "attendance_checkin",
+        checkInTime: new Date().toISOString(),
+        isLate: isLate,
+        lateMinutes: lateMinutes,
+        officeStartTime: officeStartTime,
+        status: attendance.status
+      }
+    );
+
+    // 🔔 NOTIFY EMPLOYER IF LATE
+    if (isLate && activeEmployer) {
+      await sendNotification(
+        activeEmployer.employerId,
+        "⏰ Employee Late Check-in",
+        `${employee.firstName} ${employee.lastName} checked in late by ${lateMinutes} minutes`,
+        {
+          type: "employee_late_checkin",
+          employeeId: employeeId,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          checkInTime: new Date().toISOString(),
+          lateMinutes: lateMinutes,
+          attendanceId: attendance._id.toString()
+        }
+      );
     }
 
     console.log('✅ Check-in successful');
@@ -493,6 +528,39 @@ exports.checkOut = async (req, res) => {
     attendance.totalHours = roundedHours;
     await attendance.save();
 
+    // 🔔 SEND NOTIFICATION - Check-out successful
+    await sendNotification(
+      employeeId,
+      "✅ Check-out Successful",
+      `You worked for ${roundedHours} hours today. Checked out at ${checkOutTime.toLocaleTimeString()}`,
+      {
+        type: "attendance_checkout",
+        checkOutTime: checkOutTime.toISOString(),
+        totalHours: roundedHours,
+        attendanceId: attendance._id.toString()
+      }
+    );
+
+    // Get employee for name
+    const employee = await User.findById(employeeId);
+    
+    // 🔔 NOTIFY EMPLOYER - Employee checked out
+    if (attendance.employerId) {
+      await sendNotification(
+        attendance.employerId,
+        "👋 Employee Checked Out",
+        `${employee.firstName} ${employee.lastName} checked out after working ${roundedHours} hours today`,
+        {
+          type: "employee_checkout",
+          employeeId: employeeId,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          checkOutTime: checkOutTime.toISOString(),
+          totalHours: roundedHours,
+          attendanceId: attendance._id.toString()
+        }
+      );
+    }
+
     console.log('✅ Check-out successful');
     console.log(`⏰ Time: ${checkOutTime.toLocaleTimeString()}`);
     console.log(`📊 Hours worked: ${roundedHours}h`);
@@ -516,9 +584,8 @@ exports.checkOut = async (req, res) => {
     });
   }
 };
-// controllers/employee_attendance_controller.js
-// controllers/employee_attendance_controller.js
 
+// ==================== GET TODAY ATTENDANCE ====================
 exports.getTodayAttendance = async (req, res) => {
   try {
     const employeeId = req.user.id;
@@ -529,7 +596,6 @@ exports.getTodayAttendance = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // 🔍 Pehle attendance record check karo
     const attendance = await Attendance.findOne({
       employeeId: employeeId,
       date: {
@@ -538,7 +604,6 @@ exports.getTodayAttendance = async (req, res) => {
       }
     });
 
-    // 👉 AGAR ATTENDANCE HAI TO WO DATA RETURN KARO
     if (attendance) {
       return res.json({
         success: true,
@@ -551,18 +616,16 @@ exports.getTodayAttendance = async (req, res) => {
           isLate: attendance.isLate,
           lateMinutes: attendance.lateMinutes,
           totalHours: attendance.totalHours,
-          officeStartTime: attendance.officeStartTime, // 👈 YEH ATTENDANCE WALA TIME
-          officeEndTime: attendance.officeEndTime,     // 👈 YEH ATTENDANCE WALA TIME
+          officeStartTime: attendance.officeStartTime,
+          officeEndTime: attendance.officeEndTime,
           gracePeriod: attendance.gracePeriod,
-          pointsBalance: 0 // Add from user if needed
+          pointsBalance: 0
         }
       });
     }
 
-    // 👉 AGAR ATTENDANCE NAHI HAI TO EMPLOYER SE LATEST TIME LAO
     const employee = await User.findById(employeeId).populate('myEmployers.employerId');
     
-    // Find active employer
     const activeEmployer = employee.myEmployers?.find(e => e.status === 'active');
     
     let officeStartTime = '09:00';
@@ -577,7 +640,6 @@ exports.getTodayAttendance = async (req, res) => {
       gracePeriodVal = officeHours.gracePeriod || 10;
     }
 
-    // 🆕 NO ATTENDANCE - RETURN EMPLOYER'S LATEST TIME
     return res.json({
       success: true,
       data: {
@@ -589,8 +651,8 @@ exports.getTodayAttendance = async (req, res) => {
         isLate: false,
         lateMinutes: 0,
         totalHours: 0,
-        officeStartTime: officeStartTime,  // 👈 EMPLOYER KA LATEST TIME
-        officeEndTime: officeEndTime,      // 👈 EMPLOYER KA LATEST TIME
+        officeStartTime: officeStartTime,
+        officeEndTime: officeEndTime,
         gracePeriod: gracePeriodVal,
         pointsBalance: employee.pointsBalance || 0
       }
@@ -603,7 +665,9 @@ exports.getTodayAttendance = async (req, res) => {
       message: 'Server error'
     });
   }
-};// ==================== GET ATTENDANCE HISTORY ====================
+};
+
+// ==================== GET ATTENDANCE HISTORY ====================
 exports.getAttendanceHistory = async (req, res) => {
   try {
     const employeeId = req.user.id;
@@ -615,7 +679,6 @@ exports.getAttendanceHistory = async (req, res) => {
       startDate = new Date(year, month - 1, 1);
       endDate = new Date(year, month, 0);
     } else {
-      // Default to current month
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -631,7 +694,6 @@ exports.getAttendanceHistory = async (req, res) => {
       }
     }).sort({ date: -1 });
 
-    // Calculate stats
     const totalDays = attendance.length;
     const presentDays = attendance.filter(a => a.status === 'present').length;
     const lateDays = attendance.filter(a => a.status === 'late').length;

@@ -1,29 +1,27 @@
-const { sendToUser } = require("../services/onesignal");
+// services/notificationService.js
+const { sendToUser } = require("../Services/onesignal");
+const User = require("../models/user_model");
 
-exports.sendNotificationToUser = async (req, res) => {
+async function sendNotification(userId, title, message, data = {}) {
   try {
-const { userId, subscriptionId, title, message, data } = req.body; // ✅ subscriptionId add
-
-    if (!userId || !message) {
-      return res.status(400).json({ ok: false, msg: "userId and message required" });
+    const user = await User.findById(userId).select('notificationSettings');
+    if (!user) return;
+    
+    // Check if user has push notifications enabled
+    if (user.notificationSettings?.pushNotifications === false) {
+      return;
     }
-
-    const result = await sendToUser({
-  mongoUserId: userId,
-  subscriptionId: subscriptionId || null, 
-  title,
-  message,
-  data: data || {},
-});
-
-    return res.json({ ok: true, result });
-  } catch (err) {
-    const apiErr = err?.response?.data || null;
-    return res.status(500).json({
-      ok: false,
-      msg: "OneSignal send failed",
-      error: err.message,
-      apiErr,
+    
+    await sendToUser({
+      mongoUserId: userId,
+      title: title,
+      message: message,
+      data: data,
+      collapseId: data.type || "general"
     });
+  } catch (error) {
+    console.error("Notification send error:", error);
   }
-};
+}
+
+module.exports = { sendNotification };

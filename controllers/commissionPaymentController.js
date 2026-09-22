@@ -3,6 +3,7 @@ const JobPost = require('../models/jobpost');
 const User = require('../models/user_model');
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const { sendNotification } = require('../controllers/notificationController');
 
 // ============== HELPER: Add to Team Members ==============
 async function addToTeamMembers(employerId, employeeId, jobId, applicationId, jobTitle, hiredAt, commissionPaid = 0, isFreeHire = false) {
@@ -82,8 +83,40 @@ async function addToTeamMembers(employerId, employeeId, jobId, applicationId, jo
           status: 'active'
         });
         await employee.save();
+        
+        // 🔔 NOTIFICATION TO EMPLOYEE - You've been hired!
+        await sendNotification(
+          employeeId,
+          "🎉 Congratulations! You're Hired!",
+          `${employer.employerProfile?.companyName || employer.firstName} hired you as ${jobTitle}`,
+          {
+            type: "hired",
+            employerId: employerId.toString(),
+            employerName: employer.employerProfile?.companyName || employer.firstName,
+            jobId: jobId.toString(),
+            jobTitle: jobTitle,
+            applicationId: applicationId.toString(),
+            isFreeHire: isFreeHire
+          }
+        );
       }
     }
+
+    // 🔔 NOTIFICATION TO EMPLOYER - New team member added
+    await sendNotification(
+      employerId,
+      "👥 New Team Member Added",
+      `${employee?.firstName || 'Employee'} ${employee?.lastName || ''} joined as ${jobTitle}`,
+      {
+        type: "new_team_member",
+        employeeId: employeeId.toString(),
+        employeeName: employee ? `${employee.firstName} ${employee.lastName}` : 'Employee',
+        jobId: jobId.toString(),
+        jobTitle: jobTitle,
+        hiredAt: hiredAt,
+        isFreeHire: isFreeHire
+      }
+    );
 
   } catch (error) {
     console.error('❌ Error adding to team members:', error);
@@ -152,7 +185,7 @@ exports.createCommissionPaymentIntent = async (req, res) => {
     }
 
     console.log('🔍 Checking employer protection...');
-    console.log('👔 Employer:', employer.companyName || employer.firstName);
+    console.log('👔 Employer:', employer.employerProfile?.companyName || employer.firstName);
 
     let isFreeHire = false;
     let commissionAmount = 0;
@@ -484,7 +517,7 @@ exports.getCommissionHistory = async (req, res) => {
     .populate('employeeId', 'firstName lastName email')
     .populate('employerId', 'firstName lastName email employerProfile.companyName')
     .sort({ 'hiringCommission.paidAt': -1 })
-    .limit(100); // Limit results for performance
+    .limit(100);
 
     console.log('📊 Found', applications.length, 'commission records');
 
@@ -497,7 +530,7 @@ exports.getCommissionHistory = async (req, res) => {
     const response = {
       success: true,
       summary: {
-        totalCommission: totalCommission / 100, // Convert back from cents
+        totalCommission: totalCommission / 100,
         totalApplications: applications.length,
         freeHires: freeHires,
         paidHires: applications.length - freeHires

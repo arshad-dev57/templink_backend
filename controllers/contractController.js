@@ -1,4 +1,4 @@
-const { sendToUser } = require('../services/onesignal'); // ✅ Top pe add karo
+const { sendNotification } = require('../controllers/notificationController');
 const Contract = require('../models/Contract');
 const Project = require('../models/project');
 
@@ -84,26 +84,24 @@ exports.employerSignContract = async (req, res) => {
     contract.status = 'PENDING_EMPLOYEE_SIGN';
     await contract.save();
 
-    // ✅ Employee ko notify karo — employer ne sign kar diya
-    try {
-      const employerName = `${contract.employerId.firstName} ${contract.employerId.lastName}`;
-      const project = await Project.findById(contract.projectId).select('title');
+    // 🔔 Employee ko notify - employer ne sign kar diya
+    const employerName = `${contract.employerId.firstName} ${contract.employerId.lastName}`;
+    const project = await Project.findById(contract.projectId).select('title');
 
-      await sendToUser({
-        mongoUserId: contract.employeeId._id.toString(),
-        title: "Contract Needs Your Signature! ✍️",
-        message: `${employerName} signed the contract for "${project?.title || 'your project'}". Your signature is needed.`,
-        data: {
-          type: "contract_employer_signed",
-          screen: "contracts",
-          contractId: contract._id.toString(),
-          projectId: contract.projectId.toString(),
-        }
-      });
-      console.log(`✅ Signature needed notification sent to employee: ${contract.employeeId._id}`);
-    } catch (notifError) {
-      console.log("⚠️ Notification failed (non-fatal):", notifError.message);
-    }
+    await sendNotification(
+      contract.employeeId._id.toString(),
+      "✍️ Contract Needs Your Signature!",
+      `${employerName} signed the contract for "${project?.title || 'your project'}". Your signature is needed.`,
+      {
+        type: "contract_employer_signed",
+        contractId: contract._id.toString(),
+        projectId: contract.projectId.toString(),
+        projectTitle: project?.title || 'Project',
+        employerName: employerName
+      }
+    );
+
+    console.log(`✅ Notification sent to employee: ${contract.employeeId._id}`);
 
     return res.status(200).json({
       success: true,
@@ -183,24 +181,23 @@ exports.employeeSignContract = async (req, res) => {
 
     await contract.save();
 
-    // ✅ Employer ko notify karo — dono ne sign kar diya, project active
-    try {
-      const employeeName = `${contract.employeeId.firstName} ${contract.employeeId.lastName}`;
+    // 🔔 Employer ko notify - dono ne sign kar diya, project active
+    const employeeName = `${contract.employeeId.firstName} ${contract.employeeId.lastName}`;
 
-    await sendToUser({
-  mongoUserId: contract.employerId._id.toString(),
-  title: "Contract Active! 🚀",
-  message: `${employeeName} signed the contract for "${project?.title || 'your project'}". Pay the first milestone to get started!`,
-  data: {
-    type: "contract_active",
-    screen: "milestone_payment",
-    contractId: contract._id.toString(),
-    projectId: contract.projectId.toString(),
-  }
-});      console.log(`✅ Contract active notification sent to employer: ${contract.employerId._id}`);
-    } catch (notifError) {
-      console.log("⚠️ Notification failed (non-fatal):", notifError.message);
-    }
+    await sendNotification(
+      contract.employerId._id.toString(),
+      "🚀 Contract Active! Project Started",
+      `${employeeName} signed the contract for "${project?.title || 'your project'}". Pay the first milestone to get started!`,
+      {
+        type: "contract_active",
+        contractId: contract._id.toString(),
+        projectId: contract.projectId.toString(),
+        projectTitle: project?.title || 'Project',
+        employeeName: employeeName
+      }
+    );
+
+    console.log(`✅ Notification sent to employer: ${contract.employerId._id}`);
 
     return res.status(200).json({
       success: true,

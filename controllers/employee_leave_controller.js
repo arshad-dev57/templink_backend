@@ -1,5 +1,6 @@
 const Leave = require('../models/leave_model');
 const User = require('../models/user_model');
+const { sendNotification } = require('./notificationController');
 
 // ==================== LEAVE BALANCE CONFIG ====================
 const LEAVE_CONFIG = {
@@ -116,6 +117,10 @@ exports.applyLeave = async (req, res) => {
       });
     }
 
+    // Get employer details for notification
+    const employer = await User.findById(activeEmployer.employerId);
+    const employerName = employer?.employerProfile?.companyName || employer?.firstName || 'Your employer';
+
     // Parse dates
     const startDate = new Date(fromDate);
     const endDate = new Date(toDate);
@@ -164,6 +169,41 @@ exports.applyLeave = async (req, res) => {
     });
 
     console.log('✅ Leave request created:', leave._id);
+
+    // 🔔 NOTIFICATION TO EMPLOYER - New leave request
+    await sendNotification(
+      activeEmployer.employerId,
+      "📋 New Leave Request",
+      `${employee.firstName} ${employee.lastName} applied for ${type} (${days} days) from ${fromDate} to ${toDate}`,
+      {
+        type: "leave_request_pending",
+        leaveId: leave._id.toString(),
+        employeeId: employeeId,
+        employeeName: `${employee.firstName} ${employee.lastName}`,
+        leaveType: type,
+        days: days,
+        fromDate: fromDate,
+        toDate: toDate,
+        reason: reason,
+        status: "pending"
+      }
+    );
+
+    // 🔔 NOTIFICATION TO EMPLOYEE - Leave request submitted
+    await sendNotification(
+      employeeId,
+      "📝 Leave Request Submitted",
+      `Your ${type} leave request for ${days} days has been submitted. Waiting for ${employerName}'s approval.`,
+      {
+        type: "leave_submitted",
+        leaveId: leave._id.toString(),
+        leaveType: type,
+        days: days,
+        fromDate: fromDate,
+        toDate: toDate,
+        status: "pending"
+      }
+    );
 
     res.json({
       success: true,
@@ -255,7 +295,7 @@ exports.cancelLeaveRequest = async (req, res) => {
     const leave = await Leave.findOne({
       _id: leaveId,
       employeeId: employeeId
-    });
+    }).populate('employerId', 'firstName lastName employerProfile');
 
     if (!leave) {
       return res.status(404).json({
@@ -273,6 +313,36 @@ exports.cancelLeaveRequest = async (req, res) => {
 
     leave.status = 'cancelled';
     await leave.save();
+
+    // 🔔 NOTIFICATION TO EMPLOYER - Leave request cancelled
+    await sendNotification(
+      leave.employerId,
+      "❌ Leave Request Cancelled",
+      `Leave request for ${leave.type} (${leave.days} days) has been cancelled by the employee`,
+      {
+        type: "leave_cancelled",
+        leaveId: leave._id.toString(),
+        leaveType: leave.type,
+        days: leave.days,
+        fromDate: leave.fromDate,
+        toDate: leave.toDate,
+        status: "cancelled"
+      }
+    );
+
+    // 🔔 NOTIFICATION TO EMPLOYEE - Leave request cancelled
+    const employee = await User.findById(employeeId);
+    await sendNotification(
+      employeeId,
+      "✓ Leave Request Cancelled",
+      `Your ${leave.type} leave request for ${leave.days} days has been cancelled.`,
+      {
+        type: "leave_cancelled_employee",
+        leaveId: leave._id.toString(),
+        leaveType: leave.type,
+        days: leave.days
+      }
+    );
 
     res.json({
       success: true,
@@ -319,6 +389,98 @@ exports.getLeaveStats = async (req, res) => {
     res.json({
       success: true,
       stats
+    });
+
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// ==================== EMPLOYER: GET ALL LEAVE REQUESTS ====================
+exports.getEmployerLeaveRequests = async (req, res) => {
+  try {
+    const employerId = req.user.id;
+
+    const leaves = await Leave.find({ employerId: employerId })
+      .populate('employeeId', 'firstName lastName email employeeProfile')
+      .sort({ appliedOn: -1 });
+
+    res.json({
+      success: true,
+      leaves
+    });
+
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// ==================== EMPLOYER: APPROVE/REJECT LEAVE ====================
+exports.updateLeaveStatus = async (req, res) => {
+  try {
+    const employerId = req.user.id;
+    const { leaveId } = req.params;
+    const { status, remarks } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be approved or rejected'
+      });
+    }
+
+    const leave = await Leave.findOne({
+      _id: leaveId,
+      employerId: employerId,
+      status: 'pending'
+    }).populate('employeeId', 'firstName lastName email');
+
+    if (!leave) {
+      return res.status(404).json({
+        success: false,
+        message: 'Leave request not found or already processed'
+      });
+    }
+
+    leave.status = status;
+    leave.remarks = remarks || '';
+    leave.approvedBy = employerId;
+    leave.approvedAt = new Date();
+    await leave.save();
+
+    const statusText = status === 'approved' ? 'Approved' : 'Rejected';
+    const statusEmoji = status === 'approved' ? '✅' : '❌';
+
+    // 🔔 NOTIFICATION TO EMPLOYEE - Leave status update
+    await sendNotification(
+      leave.employeeId._id,
+      `${statusEmoji} Leave Request ${statusText}`,
+      `Your ${leave.type} leave request for ${leave.days} days has been ${statusText}. ${remarks ? `Remarks: ${remarks}` : ''}`,
+      {
+        type: `leave_${status}`,
+        leaveId: leave._id.toString(),
+        leaveType: leave.type,
+        days: leave.days,
+        fromDate: leave.fromDate,
+        toDate: leave.toDate,
+        status: status,
+        remarks: remarks,
+        approvedAt: leave.approvedAt
+      }
+    );
+
+    res.json({
+      success: true,
+      message: `Leave request ${statusText} successfully`,
+      leave
     });
 
   } catch (error) {

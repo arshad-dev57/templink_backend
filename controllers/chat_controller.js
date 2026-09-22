@@ -1,6 +1,7 @@
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const User = require("../models/user_model");
+const { sendNotification } = require("./notificationController");
 
 // GET /api/chat/conversations
 exports.getMyConversations = async (req, res) => {
@@ -124,10 +125,166 @@ exports.getConversationMessages = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
+// POST /api/chat/messages - Send new message
+exports.sendMessage = async (req, res) => {
+  try {
+    const myId = req.user.id;
+    const { conversationId, text, mediaUrl, mediaType } = req.body;
+
+    if (!conversationId) {
+      return res.status(400).json({ error: "Conversation ID required" });
+    }
+
+    if (!text && !mediaUrl) {
+      return res.status(400).json({ error: "Message text or media required" });
+    }
+
+    // Find conversation
+    let convo = await Conversation.findById(conversationId);
+    if (!convo) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    // Check if user is participant
+    const isParticipant = convo.participants.some(p => p.toString() === myId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
+
+    // Get receiver ID
+    const receiverId = convo.participants.find(p => p.toString() !== myId);
+
+    // Get sender info for notification
+    const sender = await User.findById(myId).select('firstName lastName role');
+    const senderName = `${sender.firstName} ${sender.lastName}`;
+
+    // Create message
+    const message = await Message.create({
+      conversationId,
+      senderId: myId,
+      text: text || "",
+      mediaUrl: mediaUrl || null,
+      mediaType: mediaType || null,
+      readBy: [myId],
+    });
+
+    // Update conversation
+    const lastMessageText = text || (mediaType === 'image' ? '📷 Image' : mediaType === 'video' ? '🎥 Video' : '📎 File');
+    convo.lastMessage = { text: lastMessageText, at: new Date() };
+    convo.lastMessageAt = new Date();
+    
+    // Increment unread count for receiver
+    const receiverIdStr = receiverId.toString();
+    const currentUnread = convo.unreadCounts.get(receiverIdStr) || 0;
+    convo.unreadCounts.set(receiverIdStr, currentUnread + 1);
+    
+    await convo.save();
+
+    // 🔔 SEND NOTIFICATION TO RECEIVER
+    let notificationMessage = text || (mediaType === 'image' ? 'Sent you an image' : mediaType === 'video' ? 'Sent you a video' : 'Sent you a file');
+    if (notificationMessage.length > 100) {
+      notificationMessage = notificationMessage.substring(0, 100) + '...';
+    }
+    
+    await sendNotification(
+      receiverId,
+      `📩 New message from ${senderName}`,
+      notificationMessage,
+      {
+        type: "new_message",
+        conversationId: conversationId.toString(),
+        senderId: myId,
+        senderName: senderName,
+        messageId: message._id.toString()
+      }
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: {
+        _id: message._id,
+        conversationId: message.conversationId,
+        senderId: message.senderId,
+        text: message.text,
+        mediaUrl: message.mediaUrl,
+        mediaType: message.mediaType,
+        createdAt: message.createdAt,
+        readBy: message.readBy
+      }
+    });
+  } catch (e) {
+    console.error("Send message error:", e);
+    return res.status(500).json({ error: e.message });
+  }
+};
+
+// PUT /api/chat/messages/:messageId/read - Mark message as read
+exports.markMessageAsRead = async (req, res) => {
+  try {
+    const myId = req.user.id;
+    const { messageId } = req.params;
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    // Check if user is receiver
+    if (message.senderId.toString() === myId) {
+      return res.status(400).json({ error: "Cannot mark own message as read" });
+    }
+
+    // Check if already read
+    if (message.readBy.includes(myId)) {
+      return res.json({ success: true, alreadyRead: true });
+    }
+
+    // Add to readBy
+    message.readBy.push(myId);
+    await message.save();
+
+    // Update conversation unread count
+    const convo = await Conversation.findById(message.conversationId);
+    if (convo) {
+      const currentUnread = convo.unreadCounts.get(myId) || 0;
+      if (currentUnread > 0) {
+        convo.unreadCounts.set(myId, Math.max(0, currentUnread - 1));
+        await convo.save();
+      }
+    }
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("Mark read error:", e);
+    return res.status(500).json({ error: e.message });
+  }
+};
+
+// GET /api/chat/conversations/:conversationId/unread - Get unread count
+exports.getUnreadCount = async (req, res) => {
+  try {
+    const myId = req.user.id;
+    const { conversationId } = req.params;
+
+    const convo = await Conversation.findById(conversationId);
+    if (!convo) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    const isParticipant = convo.participants.some(p => p.toString() === myId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
+
+    const unreadCount = convo.unreadCounts.get(myId) || 0;
+    return res.json({ unreadCount });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+};
+
 // POST /api/chat/upload
 // Multer + Cloudinary se file upload karke mediaUrl return karo
-// ─────────────────────────────────────────────────────────────
 exports.uploadChatFile = async (req, res) => {
   try {
     // Multer ne file process kar di hogi — req.file check karo

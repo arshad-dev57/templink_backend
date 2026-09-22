@@ -1,11 +1,13 @@
 const Leave = require('../models/leave_model');
 const User = require('../models/user_model');
+const { sendNotification } = require('./notificationController');
 
+// ==================== GET ALL LEAVE REQUESTS ====================
 exports.getAllLeaveRequests = async (req, res) => {
   try {
     const employerId = req.user.id;
 
-    console.log('\n===== GET ALL LEAVE REQUESTS STARTED ');
+    console.log('\n===== GET ALL LEAVE REQUESTS STARTED =====');
     console.log('📝 Employer ID:', employerId);
 
     const leaves = await Leave.find({
@@ -39,7 +41,7 @@ exports.getAllLeaveRequests = async (req, res) => {
       rejectionReason: leave.rejectionReason
     }));
 
-     const pending = formattedLeaves.filter(l => l.status === 'pending');
+    const pending = formattedLeaves.filter(l => l.status === 'pending');
     const approved = formattedLeaves.filter(l => l.status === 'approved');
     const rejected = formattedLeaves.filter(l => l.status === 'rejected');
 
@@ -118,7 +120,8 @@ exports.approveLeave = async (req, res) => {
     console.log('\n🟡 ===== APPROVE LEAVE STARTED =====');
     console.log('📝 Leave ID:', leaveId);
 
-    const leave = await Leave.findById(leaveId);
+    const leave = await Leave.findById(leaveId)
+      .populate('employeeId', 'firstName lastName email');
 
     if (!leave) {
       return res.status(404).json({
@@ -140,6 +143,23 @@ exports.approveLeave = async (req, res) => {
     await leave.save();
 
     console.log('✅ Leave approved successfully');
+
+    // 🔔 NOTIFICATION TO EMPLOYEE - Leave approved
+    await sendNotification(
+      leave.employeeId._id,
+      "✅ Leave Request Approved",
+      `Your ${leave.type} leave request for ${leave.days} days (${leave.fromDate.toLocaleDateString()} - ${leave.toDate.toLocaleDateString()}) has been approved.`,
+      {
+        type: "leave_approved_by_employer",
+        leaveId: leave._id.toString(),
+        leaveType: leave.type,
+        days: leave.days,
+        fromDate: leave.fromDate,
+        toDate: leave.toDate,
+        status: "approved",
+        approvedAt: leave.approvedOn
+      }
+    );
 
     res.json({
       success: true,
@@ -174,7 +194,8 @@ exports.rejectLeave = async (req, res) => {
       });
     }
 
-    const leave = await Leave.findById(leaveId);
+    const leave = await Leave.findById(leaveId)
+      .populate('employeeId', 'firstName lastName email');
 
     if (!leave) {
       return res.status(404).json({
@@ -197,6 +218,24 @@ exports.rejectLeave = async (req, res) => {
     await leave.save();
 
     console.log('✅ Leave rejected successfully');
+
+    // 🔔 NOTIFICATION TO EMPLOYEE - Leave rejected
+    await sendNotification(
+      leave.employeeId._id,
+      "❌ Leave Request Rejected",
+      `Your ${leave.type} leave request for ${leave.days} days has been rejected. Reason: ${reason}`,
+      {
+        type: "leave_rejected_by_employer",
+        leaveId: leave._id.toString(),
+        leaveType: leave.type,
+        days: leave.days,
+        fromDate: leave.fromDate,
+        toDate: leave.toDate,
+        status: "rejected",
+        rejectionReason: reason,
+        rejectedAt: leave.approvedOn
+      }
+    );
 
     res.json({
       success: true,
