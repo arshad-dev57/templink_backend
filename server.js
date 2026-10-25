@@ -65,6 +65,7 @@ app.use('/api/employer-leave', require('./routes/employer_leave_routes'));
 app.use("/api/employee-timesheet", require("./routes/employee_timesheet_routes"));
 app.use('/api/employer-timesheet', require('./routes/employer_timesheet_routes'));
 app.use('/api/tasks', require('./routes/tasks_routes'));
+app.use('/api/crm', require('./routes/crm_routes'));
 
 dbConnection();
 
